@@ -1,0 +1,42 @@
+# AI Prompt Assistant - Git 忽略文件
+
+# 备份文件
+*.bak
+*.backup
+*.old
+*~
+
+# 临时文件
+*.tmp
+*.temp
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+
+# Node.js 相关（如果将来添加）
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# 日志文件
+*.log
+
+# 调试文件
+QUICK_DIAGNOSIS.js
