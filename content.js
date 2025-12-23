@@ -9,6 +9,8 @@ class PromptAssistant {
     this.iconElements = new Map();
     this.currentPopup = null;
     this.currentSite = this.detectSite();
+    this.floatingIcon = null;          // 单一悬浮球
+    this.currentFocusedInput = null;    // 当前聚焦的输入框
     this.init();
   }
 
@@ -24,6 +26,11 @@ class PromptAssistant {
     // 检查 z.ai（支持所有子域名）
     if (hostname.endsWith('.z.ai') || hostname === 'z.ai') {
       return 'zAI';
+    }
+
+    // 检查 designkit.cn
+    if (hostname.endsWith('.designkit.cn') || hostname === 'designkit.cn') {
+      return 'DesignKit';
     }
 
     const sites = {
@@ -939,74 +946,22 @@ class PromptAssistant {
     }, 2000);
   }
 
-  // 清理漂浮图标
+  // 清理漂浮图标（适配单一悬浮球机制）
   cleanupFloatingIcons() {
+    // 如果有多个图标（可能是旧机制残留），只保留主悬浮球
     const allIcons = document.querySelectorAll('.prompt-assistant-icon');
-    if (allIcons.length === 0) return;
+    if (allIcons.length <= 1) return;
 
-    let removedCount = 0;
+    console.log(`[清理] 发现 ${allIcons.length} 个图标，保留主悬浮球`);
+
+    // 找到主悬浮球（带 id 的）
+    const mainIcon = document.getElementById('prompt-assistant-floating-icon');
+
     allIcons.forEach(icon => {
-      // 检查1：图标是否在左上角（位置异常）
-      const rect = icon.getBoundingClientRect();
-      const isTopLeft = rect.top < 50 && rect.left < 50;
-
-      // 检查2：图标是否没有关联任何输入框
-      let hasAssociatedInput = false;
-      this.iconElements.forEach((storedIcon, inputEl) => {
-        if (storedIcon === icon && inputEl.isConnected) {
-          hasAssociatedInput = true;
-        }
-      });
-
-      // 检查3：图标是否在视口外
-      const isOutsideViewport = rect.bottom < 0 || rect.top > window.innerHeight;
-
-      // 检查4：图标是否没有父元素
-      const hasNoParent = !icon.parentNode;
-
-      // 检查5：图标位置是否异常
-      const isPositionInvalid = rect.top < 0 || rect.left < 0 || rect.width === 0 || rect.height === 0;
-
-      // 检查6：图标是否在页面边缘
-      const isAtEdge = rect.left === 0 || rect.top === 0;
-
-      if (isTopLeft || !hasAssociatedInput || isOutsideViewport || hasNoParent || isPositionInvalid || isAtEdge) {
-        if (icon._cleanup) {
-          icon._cleanup();
-        }
-        if (icon.parentNode) {
-          icon.remove();
-          removedCount++;
-        }
+      if (icon !== mainIcon && icon.parentNode) {
+        icon.remove();
       }
     });
-
-    // 额外检查：如果超过1个图标，清理所有异常的
-    if (allIcons.length > 1) {
-      console.log(`[定时清理] 发现 ${allIcons.length} 个图标，执行深度清理`);
-      const validIcons = Array.from(allIcons).filter(icon => {
-        const rect = icon.getBoundingClientRect();
-        const isTopLeft = rect.top < 50 && rect.left < 50;
-        const isOutsideViewport = rect.bottom < 0 || rect.top > window.innerHeight;
-        const hasNoParent = !icon.parentNode;
-        const isPositionInvalid = rect.top < 0 || rect.left < 0 || rect.width === 0 || rect.height === 0;
-        return !isTopLeft && !isOutsideViewport && !hasNoParent && !isPositionInvalid;
-      });
-
-      if (validIcons.length > 1) {
-        for (let i = 1; i < validIcons.length; i++) {
-          if (validIcons[i]._cleanup) validIcons[i]._cleanup();
-          if (validIcons[i].parentNode) {
-            validIcons[i].remove();
-            removedCount++;
-          }
-        }
-      }
-    }
-
-    if (removedCount > 0) {
-      console.log(`[定时清理] 移除了 ${removedCount} 个漂浮图标`);
-    }
   }
 
   // 加载存储的数据
@@ -1069,6 +1024,22 @@ class PromptAssistant {
         '[contenteditable]',
         '[role="textbox"]'
       ],
+      'DesignKit': [
+        // designkit.cn 可能使用的选择器
+        'div[contenteditable="true"]',
+        'div[role="textbox"]',
+        'textarea',
+        'div[class*="editor"]',
+        'div[class*="Editor"]',
+        'div[class*="input"]',
+        'div[class*="Input"]',
+        'div[class*="textarea"]',
+        'div[class*="Textarea"]',
+        'div[class*="message"]',
+        'div[class*="prompt"]',
+        '[contenteditable]',
+        '[role="textbox"]'
+      ],
       'default': [
         'textarea',
         'div[contenteditable="true"]',
@@ -1079,68 +1050,109 @@ class PromptAssistant {
     };
 
     const siteSelectors = selectors[this.currentSite] || selectors.default;
-    let newInputs = [];
+    const allInputs = new Set();
 
+    // 收集所有输入框
     siteSelectors.forEach(selector => {
       const elements = document.querySelectorAll(selector);
-      console.log(`选择器 "${selector}" 找到 ${elements.length} 个元素`);
       elements.forEach(element => {
-        // 检查是否为输入框且未被处理
-        if (this.isTextInput(element) && !this.iconElements.has(element)) {
-          // 额外检查：确保这个元素没有已经被其他选择器找到
-          if (!newInputs.includes(element)) {
-            newInputs.push(element);
-            console.log('发现新输入框:', element);
-          }
+        if (this.isTextInput(element)) {
+          allInputs.add(element);
         }
       });
     });
 
-    // 检查已存在的输入框是否还在DOM中
-    const existingInputs = this.inputElements.filter(element =>
-      element.isConnected && this.iconElements.has(element)
-    );
+    const allInputsArray = Array.from(allInputs);
+    console.log(`[查找输入框] 共找到 ${allInputsArray.length} 个输入框`);
 
-    // 移除已不存在的输入框的图标
-    const removedInputs = this.inputElements.filter(element => !element.isConnected);
+    // 移除已不存在的输入框的监听器
+    const removedInputs = this.inputElements.filter(element => !allInputs.has(element));
     removedInputs.forEach(element => {
-      const icon = this.iconElements.get(element);
-      if (icon) {
-        // 调用清理函数
-        if (icon._cleanup) {
-          icon._cleanup();
-        }
-        icon.remove();
-        this.iconElements.delete(element);
+      if (element._focusHandler) {
+        element.removeEventListener('focus', element._focusHandler);
       }
     });
 
-    // 为新发现的输入框添加图标
-    if (newInputs.length > 0) {
-      console.log(`总共需要添加 ${newInputs.length} 个图标`);
-
-      // 激进策略：豆包等网站，只允许添加1个图标，且只在没有图标时添加
-      const currentIconCount = document.querySelectorAll('.prompt-assistant-icon').length;
-
-      if (currentIconCount > 0) {
-        console.log(`已有 ${currentIconCount} 个图标，不再添加新图标`);
-        return;  // 直接返回，不添加任何新图标
+    // 为所有输入框添加焦点监听（包括已存在的）
+    allInputsArray.forEach(element => {
+      if (!element._focusHandler) {
+        // 创建焦点处理器
+        element._focusHandler = () => {
+          console.log('[输入框获得焦点]', element);
+          this.handleInputFocus(element);
+        };
+        element.addEventListener('focus', element._focusHandler, true);
       }
+    });
 
-      // 限制：最多只允许添加1个图标
-      if (newInputs.length > 1) {
-        console.warn(`检测到多个输入框 (${newInputs.length})，只添加第一个`);
-        newInputs = [newInputs[0]];
-      }
+    // 更新输入框列表
+    this.inputElements = allInputsArray;
 
-      newInputs.forEach(element => {
-        this.addPromptIcon(element);
-      });
+    // 如果还没有悬浮球，创建一个
+    if (!this.floatingIcon) {
+      this.createFloatingIcon();
     } else {
-      console.log('没有发现新的输入框');
+      // 如果有当前焦点元素，更新图标位置
+      if (this.currentFocusedInput) {
+        this.positionIcon(this.floatingIcon, this.currentFocusedInput);
+      }
     }
+  }
 
-    this.inputElements = [...existingInputs, ...newInputs];
+  // 处理输入框获得焦点
+  handleInputFocus(inputElement) {
+    this.currentFocusedInput = inputElement;
+
+    if (this.floatingIcon) {
+      // 显示图标
+      this.floatingIcon.style.opacity = '1';
+      this.floatingIcon.style.pointerEvents = 'auto';
+      // 移动图标到当前输入框
+      this.positionIcon(this.floatingIcon, inputElement);
+    }
+  }
+
+  // 创建单一的悬浮球
+  createFloatingIcon() {
+    const icon = document.createElement('div');
+    icon.className = 'prompt-assistant-icon';
+    icon.id = 'prompt-assistant-floating-icon';
+    icon.innerHTML = `
+      <svg viewBox="0 0 24 24" width="20" height="20">
+        <path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
+        <circle cx="19" cy="5" r="3" fill="#4CAF50"/>
+      </svg>
+    `;
+
+    // 初始隐藏
+    icon.style.opacity = '0';
+    icon.style.pointerEvents = 'none';
+
+    // 点击事件
+    icon.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.currentFocusedInput) {
+        this.showPromptPopup(icon, this.currentFocusedInput);
+      }
+    });
+
+    // 鼠标悬停高亮
+    icon.addEventListener('mouseenter', () => {
+      icon.style.opacity = '1';
+      icon.style.transform = 'scale(1.15)';
+    });
+
+    icon.addEventListener('mouseleave', () => {
+      if (!this.currentFocusedInput || document.activeElement !== this.currentFocusedInput) {
+        icon.style.opacity = '0.5';
+      }
+      icon.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(icon);
+    this.floatingIcon = icon;
+    console.log('[创建悬浮球] 悬浮球已创建');
   }
 
   // 判断是否为文本输入元素
@@ -1155,182 +1167,16 @@ class PromptAssistant {
     return false;
   }
 
-  // 添加提示图标
+  // 添加提示图标（已废弃，使用 createFloatingIcon 替代）
   addPromptIcon(inputElement) {
-    // 关键检查0：全局只允许1个图标（激进策略）
-    const allIcons = document.querySelectorAll('.prompt-assistant-icon');
-
-    // 如果已经有1个或更多图标，先清理所有异常的，只保留最新的
-    if (allIcons.length > 0) {
-      console.log(`发现 ${allIcons.length} 个现有图标，执行清理检查`);
-
-      // 检查每个图标是否需要清理
-      let hasValidIcon = false;
-      allIcons.forEach(icon => {
-        const rect = icon.getBoundingClientRect();
-        const isTopLeft = rect.top < 50 && rect.left < 50;
-        const isOutsideViewport = rect.bottom < 0 || rect.top > window.innerHeight;
-        const hasNoParent = !icon.parentNode;
-        const isPositionInvalid = rect.top < 0 || rect.left < 0 || rect.width === 0 || rect.height === 0;
-
-        // 如果图标异常，清理它
-        if (isTopLeft || isOutsideViewport || hasNoParent || isPositionInvalid) {
-          if (icon._cleanup) icon._cleanup();
-          if (icon.parentNode) icon.remove();
-        } else {
-          // 如果已有正常图标，不再添加新的
-          hasValidIcon = true;
-        }
-      });
-
-      // 清理异常的Map记录
-      this.iconElements.forEach((icon, inputEl) => {
-        if (!icon.parentNode || icon.parentNode === null) {
-          this.iconElements.delete(inputEl);
-        }
-      });
-
-      // 如果已有正常图标，不再添加
-      if (hasValidIcon) {
-        console.log('已有正常图标，不再添加新图标');
-        return;
-      }
-
-      // 如果所有图标都被清理了，清空记录
-      if (document.querySelectorAll('.prompt-assistant-icon').length === 0) {
-        this.iconElements.clear();
-        this.inputElements = [];
-      }
-    }
-
-    const icon = document.createElement('div');
-    icon.className = 'prompt-assistant-icon';
-    icon.innerHTML = `
-      <svg viewBox="0 0 24 24" width="20" height="20">
-        <path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
-        <circle cx="19" cy="5" r="3" fill="#4CAF50"/>
-        <path fill="white" d="M19 3l-1.5 1.5L19 6l1.5-1.5z" opacity="0.8"/>
-      </svg>
-    `;
-
-    // 设置图标位置
-    this.positionIcon(icon, inputElement);
-
-    // 添加事件监听
-    icon.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // 点击时先确保图标位置正确
-      this.positionIcon(icon, inputElement);
-      this.showPromptPopup(icon, inputElement);
-    });
-
-    // 输入框获得焦点时显示图标并更新位置
-    inputElement.addEventListener('focus', () => {
-      icon.style.opacity = '1';
-      icon.style.pointerEvents = 'auto';
-      this.positionIcon(icon, inputElement); // 每次聚焦都重新定位
-    });
-
-    inputElement.addEventListener('blur', (e) => {
-      // 延迟隐藏，确保点击图标时不会立即隐藏
-      setTimeout(() => {
-        if (!icon.contains(e.relatedTarget)) {
-          icon.style.opacity = '0.5';
-        }
-      }, 200);
-    });
-
-    // 更新图标位置的核心函数
-    const updateIconPosition = () => {
-      // 检查输入框是否仍然在DOM中
-      if (!inputElement.isConnected) {
-        // 输入框已移除，清理图标
-        if (icon._cleanup) {
-          icon._cleanup();
-        }
-        icon.remove();
-        this.iconElements.delete(inputElement);
-        return;
-      }
-
-      // 检查输入框是否可见（更宽松的条件）
-      const inputRect = inputElement.getBoundingClientRect();
-      const inputVisible = inputRect.bottom > 0 &&
-                          inputRect.top < window.innerHeight &&
-                          inputRect.width > 0 &&
-                          inputRect.height > 0;
-
-      // 如果输入框可见，或者图标当前可见，都更新位置
-      if (inputVisible || icon.style.opacity === '1') {
-        this.positionIcon(icon, inputElement);
-      }
-    };
-
-    // 使用 requestAnimationFrame 优化滚动性能
-    let rafId = null;
-    const throttledUpdate = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        updateIconPosition();
-        rafId = null;
-      });
-    };
-
-    // 窗口大小变化时的特殊处理 - 更积极的响应
-    const handleResize = () => {
-      // 立即更新位置，不检查可见性
-      if (inputElement.isConnected) {
-        this.positionIcon(icon, inputElement);
-      }
-    };
-
-    // 滚动事件（被动监听，不阻塞）
-    window.addEventListener('scroll', throttledUpdate, { passive: true });
-
-    // 窗口大小变化事件（立即响应）
-    window.addEventListener('resize', handleResize);
-
-    // 监听输入框位置变化（MutationObserver）
-    const observer = new MutationObserver(() => {
-      if (icon.style.opacity === '1') {
-        this.positionIcon(icon, inputElement);
-      }
-    });
-
-    // 监听输入框的样式和属性变化
-    observer.observe(inputElement, {
-      attributes: true,
-      attributeFilter: ['style', 'class']
-    });
-
-    // 存储清理函数，用于后续清理
-    icon._cleanup = () => {
-      window.removeEventListener('scroll', throttledUpdate);
-      window.removeEventListener('resize', handleResize);
-      observer.disconnect();
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-
-    // 初始状态
-    icon.style.opacity = '0.5';
-
-    document.body.appendChild(icon);
-    this.iconElements.set(inputElement, icon);
+    // 此函数已被新的焦点跟随机制替代
+    console.warn('[addPromptIcon] 此函数已废弃，请使用 createFloatingIcon');
   }
 
-  // 定位图标 - 固定在窗口右侧贴边，垂直跟随输入框
+  // 定位图标 - 跟随输入框位置，支持动画过渡
   positionIcon(icon, inputElement) {
     // 检查输入框是否仍然有效
-    if (!inputElement.isConnected) {
-      // 输入框已移除，清理图标
-      if (icon._cleanup) {
-        icon._cleanup();
-      }
-      icon.remove();
-      this.iconElements.delete(inputElement);
+    if (!inputElement || !inputElement.isConnected) {
       return;
     }
 
@@ -1349,22 +1195,9 @@ class PromptAssistant {
                         rect.width > 0 &&
                         rect.height > 0;
 
-    // 如果输入框完全不可见，隐藏图标但保持监听
+    // 如果输入框完全不可见，隐藏图标
     if (!inputVisible) {
-      // 检查是否在视口上方还是下方
-      if (rect.bottom <= 0) {
-        // 输入框在视口上方，将图标放在顶部
-        icon.style.top = `${margin}px`;
-      } else if (rect.top >= viewportHeight) {
-        // 输入框在视口下方，将图标放在底部
-        icon.style.top = `${viewportHeight - iconSize - margin}px`;
-      }
-      // 水平位置始终固定在右侧
-      icon.style.left = `${viewportWidth - iconSize - rightEdge}px`;
-      icon.style.position = 'fixed';
-      icon.style.right = 'auto';
-      icon.style.bottom = 'auto';
-      icon.style.zIndex = '999999';
+      icon.style.opacity = '0';
       return;
     }
 
@@ -1379,8 +1212,21 @@ class PromptAssistant {
       top = viewportHeight - iconSize - margin;
     }
 
-    // 固定水平位置：窗口右侧贴边
-    const left = viewportWidth - iconSize - rightEdge;
+    // 获取用户设置的位置偏好
+    const iconPosition = this.settings.iconPosition || 'right';
+
+    // 计算水平位置
+    let left;
+    if (iconPosition === 'left') {
+      // 左侧：输入框左边
+      left = rect.left - iconSize - margin;
+      if (left < margin) {
+        left = rect.right + margin; // 如果放不下，放到右边
+      }
+    } else {
+      // 右侧：窗口右侧贴边
+      left = viewportWidth - iconSize - rightEdge;
+    }
 
     // 应用定位
     icon.style.position = 'fixed';
@@ -1389,42 +1235,9 @@ class PromptAssistant {
     icon.style.right = 'auto';
     icon.style.bottom = 'auto';
     icon.style.zIndex = '999999';
-    icon.style.cursor = 'pointer';
 
-    // 只在位置变化时设置过渡动画，避免首次加载时的动画
-    if (icon.style.left && icon.style.top) {
-      icon.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
-    } else {
-      icon.style.transition = 'none';
-      // 强制重绘后启用动画
-      requestAnimationFrame(() => {
-        icon.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
-      });
-    }
-
-    // 设置样式（如果尚未设置）
-    if (!icon.style.backgroundColor) {
-      icon.style.backgroundColor = '#4CAF50';
-      icon.style.borderRadius = '50%';
-      icon.style.width = `${iconSize}px`;
-      icon.style.height = `${iconSize}px`;
-      icon.style.display = 'flex';
-      icon.style.alignItems = 'center';
-      icon.style.justifyContent = 'center';
-      icon.style.boxShadow = '0 3px 10px rgba(0,0,0,0.25)';
-      icon.style.border = '2px solid white';
-
-      // 添加悬停放大效果（只添加一次）
-      icon.style.transform = 'scale(1)';
-      icon.addEventListener('mouseenter', () => {
-        icon.style.transform = 'scale(1.15)';
-        icon.style.boxShadow = '0 5px 15px rgba(76, 175, 80, 0.4)';
-      });
-      icon.addEventListener('mouseleave', () => {
-        icon.style.transform = 'scale(1)';
-        icon.style.boxShadow = '0 3px 10px rgba(0,0,0,0.25)';
-      });
-    }
+    // 平滑过渡动画
+    icon.style.transition = 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
   }
 
   // 显示提示词弹出窗口 - 全新设计
