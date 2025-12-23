@@ -1536,7 +1536,8 @@ class PromptAssistant {
 
     // 添加新提示词
     popup.querySelector('.add-prompt-btn').addEventListener('click', () => {
-      this.showAddPromptDialog();
+      // 传递当前选中的分类过滤器
+      this.showAddPromptDialog(currentFilter === 'all' ? null : currentFilter);
     });
   }
 
@@ -1755,12 +1756,15 @@ class PromptAssistant {
   }
 
   // 显示添加提示词对话框
-  showAddPromptDialog() {
+  showAddPromptDialog(preselectCategory = null) {
     this.closePopup();
 
     // 获取所有分类
     const categories = Object.keys(this.prompts);
     const defaultCategories = ['角色扮演', '写作助手', '学习辅助'];
+
+    // 辅助函数：检查是否需要预选
+    const isSelected = (cat) => preselectCategory && cat === preselectCategory ? 'selected' : '';
 
     const dialog = document.createElement('div');
     dialog.className = 'prompt-assistant-dialog';
@@ -1773,10 +1777,10 @@ class PromptAssistant {
             <select id="prompt-category" class="category-select">
               <option value="">-- 选择分类 --</option>
               ${defaultCategories.map(cat =>
-                `<option value="${this.escapeHtml(cat)}">${this.escapeHtml(cat)}</option>`
+                `<option value="${this.escapeHtml(cat)}" ${isSelected(cat)}>${this.escapeHtml(cat)}</option>`
               ).join('')}
               ${categories.filter(cat => !defaultCategories.includes(cat)).map(cat =>
-                `<option value="${this.escapeHtml(cat)}">${this.escapeHtml(cat)}</option>`
+                `<option value="${this.escapeHtml(cat)}" ${isSelected(cat)}>${this.escapeHtml(cat)}</option>`
               ).join('')}
               <option value="__new__">+ 新建分类...</option>
             </select>
