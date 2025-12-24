@@ -1296,13 +1296,32 @@ class PromptAssistant {
     const shadowHost = document.createElement('div');
     shadowHost.className = 'prompt-assistant-shadow-host';
 
-    // 设置容器定位样式
+    // 智能定位：跟随悬浮球
+    const iconRect = icon.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const popupWidth = 480;
     const popupHeight = Math.min(600, viewportHeight - 40);
-    const left = (viewportWidth - popupWidth) / 2;
-    const top = (viewportHeight - popupHeight) / 2;
+    const margin = 12;
+
+    // 水平定位：优先在悬浮球左侧
+    let left;
+    if (iconRect.left - popupWidth - margin >= margin) {
+      left = iconRect.left - popupWidth - margin;
+    } else if (iconRect.right + popupWidth + margin <= viewportWidth - margin) {
+      left = iconRect.right + margin;
+    } else {
+      left = Math.max(margin, (viewportWidth - popupWidth) / 2);
+    }
+
+    // 垂直定位：与悬浮球顶部对齐
+    let top = iconRect.top;
+    if (top + popupHeight > viewportHeight - margin) {
+      top = viewportHeight - popupHeight - margin;
+    }
+    if (top < margin) {
+      top = margin;
+    }
 
     shadowHost.style.cssText = `
       position: fixed !important;
