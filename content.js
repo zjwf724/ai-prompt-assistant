@@ -1781,12 +1781,16 @@ class PromptAssistant {
         color: #FFD700;
         transform: scale(1.2);
       }
-      .star-btn.starred {
-        color: #FFD700;
-      }
       .star-btn svg {
         width: 16px;
         height: 16px;
+        fill: currentColor;
+      }
+      .star-btn.starred {
+        color: #FFD700;
+      }
+      .star-btn.starred svg {
+        fill: #FFD700;
       }
       .filter-starred svg {
         fill: #FFD700;
