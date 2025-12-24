@@ -1364,10 +1364,10 @@ class PromptAssistant {
       </div>
     `;
 
-    // 插入到 document.body（使用 body 更可靠）
+    // 插入到 document.body
     document.body.appendChild(popup);
 
-    // 视口居中定位 - 最可靠的方式
+    // 视口居中定位
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const margin = 20;
@@ -1376,16 +1376,23 @@ class PromptAssistant {
     const popupWidth = Math.min(480, viewportWidth - margin * 2);
     const popupMaxHeight = viewportHeight - margin * 2;
 
-    // 水平居中
+    // 定位
     const left = Math.max(margin, (viewportWidth - popupWidth) / 2);
-
-    // 垂直居中
     const top = margin;
 
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
     popup.style.width = `${popupWidth}px`;
     popup.style.maxHeight = `${popupMaxHeight}px`;
+
+    // 关键：直接设置内容区域的 max-height，确保能滚动
+    const contentArea = popup.querySelector('.popup-content');
+    if (contentArea) {
+      // 计算内容区域的最大高度（弹窗高度减去头部高度约150px）
+      const contentMaxHeight = popupMaxHeight - 150;
+      contentArea.style.maxHeight = `${contentMaxHeight}px`;
+      contentArea.style.overflowY = 'auto';
+    }
 
     this.currentPopup = popup;
 
