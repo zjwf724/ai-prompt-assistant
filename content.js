@@ -1885,34 +1885,10 @@ class PromptAssistant {
     // shadowRoot 是 Shadow Root，popup 是实际的弹窗元素
     const popup = shadowRoot.querySelector('.prompt-assistant-popup');
 
-    // 获取第一个分类作为默认过滤
-    const categoryKeys = Object.keys(this.prompts);
-    const defaultFilter = categoryKeys.length > 0 ? categoryKeys[0] : 'all';
-
     // 存储当前过滤状态
-    let currentFilter = defaultFilter;
+    let currentFilter = 'all';
     let currentSearch = '';
     let currentMode = 'normal'; // 'normal', 'edit', 'delete'
-
-    // 更新初始 active 类：移除"全部"的 active，给默认分类添加 active
-    const allTag = shadowRoot.querySelector('.filter-tag[data-filter="all"]');
-    const defaultTag = shadowRoot.querySelector(`.filter-tag[data-filter="${defaultFilter}"]`);
-    if (allTag) allTag.classList.remove('active');
-    if (defaultTag) defaultTag.classList.add('active');
-
-    // 初始执行一次过滤
-    const initialFilter = () => {
-      const promptItems = shadowRoot.querySelectorAll('.prompt-item');
-      promptItems.forEach(item => {
-        const category = item.dataset.category;
-        if (category === defaultFilter) {
-          item.classList.remove('hidden');
-        } else {
-          item.classList.add('hidden');
-        }
-      });
-    };
-    initialFilter();
 
     // 切换模式函数
     const setMode = (mode) => {
