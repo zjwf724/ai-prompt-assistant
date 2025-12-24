@@ -892,28 +892,41 @@ class PromptAssistant {
       await this.loadData();
 
       // 检查当前网站是否在启用列表中
-      const enabledSites = await chrome.runtime.sendMessage({ type: 'GET_ENABLED_SITES' });
-      const currentHostname = window.location.hostname;
+      let enabledSites = [];
+      let isSiteEnabled = false;
 
-      console.log('[网站检查] 启用的网站列表:', enabledSites);
+      try {
+        enabledSites = await chrome.runtime.sendMessage({ type: 'GET_ENABLED_SITES' });
+        console.log('[网站检查] 启用的网站列表:', enabledSites);
+      } catch (e) {
+        console.error('[网站检查] 获取启用网站失败:', e);
+      }
+
+      const currentHostname = window.location.hostname;
       console.log('[网站检查] 当前hostname:', currentHostname);
 
       // 更灵活的匹配逻辑
-      const isSiteEnabled = enabledSites.some(site => {
-        console.log(`[网站检查] 检查匹配: "${site}" vs "${currentHostname}"`);
+      if (enabledSites && enabledSites.length > 0) {
+        isSiteEnabled = enabledSites.some(site => {
+          console.log(`[网站检查] 检查匹配: "${site}" vs "${currentHostname}"`);
 
-        // 处理 .domain.com 格式
-        if (site.startsWith('.')) {
-          const baseDomain = site.substring(1);
-          const match = currentHostname.endsWith(baseDomain) || currentHostname === baseDomain;
-          console.log(`[网站检查] 子域名格式: "${baseDomain}" -> ${match}`);
+          // 处理 .domain.com 格式
+          if (site.startsWith('.')) {
+            const baseDomain = site.substring(1);
+            const match = currentHostname.endsWith(baseDomain) || currentHostname === baseDomain;
+            console.log(`[网站检查] 子域名格式: "${baseDomain}" -> ${match}`);
+            return match;
+          }
+          // 处理 domain.com 格式
+          const match = currentHostname.includes(site) || currentHostname === site;
+          console.log(`[网站检查] 完全匹配: "${site}" -> ${match}`);
           return match;
-        }
-        // 处理 domain.com 格式
-        const match = currentHostname.includes(site) || currentHostname === site;
-        console.log(`[网站检查] 完全匹配: "${site}" -> ${match}`);
-        return match;
-      });
+        });
+      } else {
+        // 如果获取失败，默认启用（降级策略）
+        console.warn('[网站检查] 无法获取启用列表，默认启用插件');
+        isSiteEnabled = true;
+      }
 
       console.log('[网站检查] 最终是否启用:', isSiteEnabled);
 
@@ -924,6 +937,7 @@ class PromptAssistant {
 
       // 动态注入CSS样式（仅在启用的网站上注入）
       this.injectStyles();
+      console.log('[CSS注入] 样式已注入');
 
       // 立即创建悬浮球（预加载，确保用户点击时立即可用）
       this.createFloatingIcon();
@@ -941,6 +955,9 @@ class PromptAssistant {
       this.startFloatingIconCleanup();
     } catch (error) {
       console.error('AI Prompt Assistant 初始化失败:', error);
+      // 即使初始化失败，也尝试创建悬浮球（降级策略）
+      this.injectStyles();
+      this.createFloatingIcon();
     }
   }
 
@@ -1154,6 +1171,7 @@ class PromptAssistant {
 
     // 初始半透明可见，默认定位在右侧中间
     // 使用 !important 确保样式不被网站 CSS 覆盖
+    // 关键样式全部内联，不依赖 CSS 类
     icon.style.cssText = `
       opacity: 0.5 !important;
       pointer-events: auto !important;
@@ -1167,6 +1185,13 @@ class PromptAssistant {
       align-items: center !important;
       justify-content: center !important;
       visibility: visible !important;
+      width: 36px !important;
+      height: 36px !important;
+      background-color: #4CAF50 !important;
+      border-radius: 50% !important;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.25) !important;
+      border: 2px solid white !important;
+      cursor: pointer !important;
     `;
 
     // 点击事件
