@@ -1359,31 +1359,46 @@ class PromptAssistant {
       </div>
     `;
 
-    // 定位弹窗
+    // 先插入 DOM 以便计算实际尺寸
+    document.body.appendChild(popup);
+
+    // 智能定位弹窗（确保在视口内完整显示）
     const iconRect = icon.getBoundingClientRect();
-    const popupWidth = 480;
+    const popupRect = popup.getBoundingClientRect();
     const margin = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
 
-    // 水平定位：在悬浮球左侧
-    let left = iconRect.left - popupWidth - margin;
-    if (left < margin) {
+    // 水平定位策略：优先在悬浮球左侧，空间不足则右侧
+    let left;
+    if (iconRect.left - popupRect.width - margin >= margin) {
+      // 左侧有足够空间
+      left = iconRect.left - popupRect.width - margin;
+    } else if (iconRect.right + popupRect.width + margin <= viewportWidth - margin) {
+      // 右侧有足够空间
       left = iconRect.right + margin;
-    }
-    if (left + popupWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popupWidth - margin;
+    } else {
+      // 两侧都不够，居中显示
+      left = Math.max(margin, (viewportWidth - popupRect.width) / 2);
     }
 
-    // 垂直定位：相对悬浮球居中
-    let top = iconRect.top + (iconRect.height / 2) - 300;
-    if (top < margin) top = margin;
-    if (top + 600 > window.innerHeight - margin) {
-      top = window.innerHeight - 600 - margin;
+    // 垂直定位策略：优先与悬浮球顶部对齐，空间不足则向下调整
+    let top = iconRect.top;
+
+    // 确保底部不超出视口
+    if (top + popupRect.height > viewportHeight - margin) {
+      top = viewportHeight - popupRect.height - margin;
+    }
+
+    // 确保顶部不超出视口
+    if (top < margin) {
+      top = margin;
     }
 
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
+    popup.style.maxHeight = `${viewportHeight - top * 2}px`; // 动态设置最大高度
 
-    document.body.appendChild(popup);
     this.currentPopup = popup;
 
     // 添加事件监听
