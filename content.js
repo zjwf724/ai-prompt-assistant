@@ -1657,6 +1657,15 @@ class PromptAssistant {
         color: #999;
         padding: 40px 20px;
       }
+      .hidden {
+        display: none !important;
+      }
+      .no-results {
+        grid-column: 1 / -1;
+        text-align: center;
+        color: #999;
+        padding: 40px 20px;
+      }
       .confirm-dialog {
         position: fixed;
         top: 50%;
