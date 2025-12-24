@@ -1364,33 +1364,50 @@ class PromptAssistant {
       </div>
     `;
 
-    // 插入到 document.body
+    // 先插入 DOM 以便计算实际尺寸
     document.body.appendChild(popup);
 
-    // 视口居中定位
+    // 智能定位弹窗（确保在视口内完整显示）
+    const iconRect = icon.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const margin = 12;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    const margin = 20;
 
-    // 弹窗尺寸
-    const popupWidth = Math.min(480, viewportWidth - margin * 2);
-    const popupMaxHeight = viewportHeight - margin * 2;
+    // 水平定位策略：优先在悬浮球左侧，空间不足则右侧
+    let left;
+    if (iconRect.left - popupRect.width - margin >= margin) {
+      // 左侧有足够空间
+      left = iconRect.left - popupRect.width - margin;
+    } else if (iconRect.right + popupRect.width + margin <= viewportWidth - margin) {
+      // 右侧有足够空间
+      left = iconRect.right + margin;
+    } else {
+      // 两侧都不够，居中显示
+      left = Math.max(margin, (viewportWidth - popupRect.width) / 2);
+    }
 
-    // 定位
-    const left = Math.max(margin, (viewportWidth - popupWidth) / 2);
-    const top = margin;
+    // 垂直定位策略：优先与悬浮球顶部对齐，空间不足则向下调整
+    let top = iconRect.top;
+
+    // 确保底部不超出视口
+    if (top + popupRect.height > viewportHeight - margin) {
+      top = viewportHeight - popupRect.height - margin;
+    }
+
+    // 确保顶部不超出视口
+    if (top < margin) {
+      top = margin;
+    }
 
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
-    popup.style.width = `${popupWidth}px`;
-    popup.style.maxHeight = `${popupMaxHeight}px`;
 
-    // 关键：直接设置内容区域的 max-height，确保能滚动
+    // 关键：设置内容区域的 max-height，确保能滚动
     const contentArea = popup.querySelector('.popup-content');
     if (contentArea) {
-      // 计算内容区域的最大高度（弹窗高度减去头部高度约150px）
-      const contentMaxHeight = popupMaxHeight - 150;
-      contentArea.style.maxHeight = `${contentMaxHeight}px`;
+      const contentMaxHeight = viewportHeight - top - margin - 150; // 150px是头部高度
+      contentArea.style.maxHeight = `${Math.max(200, contentMaxHeight)}px`;
       contentArea.style.overflowY = 'auto';
     }
 
