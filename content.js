@@ -1892,6 +1892,7 @@ class PromptAssistant {
 
       promptItems.forEach(item => {
         const category = item.dataset.category;
+        const index = item.dataset.index;
         const title = item.querySelector('.prompt-title').textContent;
         const preview = item.querySelector('.prompt-preview').textContent;
 
@@ -1900,8 +1901,8 @@ class PromptAssistant {
         if (currentFilter === 'all') {
           matchesFilter = true;
         } else if (currentFilter === 'starred') {
-          // 星标过滤：检查是否在星标列表中
-          matchesFilter = this.starredPrompts.some(s => s.category === category && s.index === item.dataset.index);
+          // 星标过滤：检查是否在星标列表中（使用 == 比较，因为 dataset.index 是字符串）
+          matchesFilter = this.starredPrompts.some(s => s.category === category && s.index == index);
         } else {
           matchesFilter = category === currentFilter;
         }
@@ -1959,16 +1960,34 @@ class PromptAssistant {
 
         const category = btn.dataset.category;
         const index = btn.dataset.index;
-        const isStarred = this.starredPrompts.some(s => s.category === category && s.index === index);
+        const promptItem = btn.closest('.prompt-item');
+        const promptTitle = promptItem.querySelector('.prompt-title').textContent;
+
+        // 检查是否已星标（使用 == 比较，因为 dataset.index 是字符串）
+        const isStarred = this.starredPrompts.some(s => s.category === category && s.index == index);
 
         if (isStarred) {
           // 取消星标
-          this.starredPrompts = this.starredPrompts.filter(s => !(s.category === category && s.index === index));
+          this.starredPrompts = this.starredPrompts.filter(s => !(s.category === category && s.index == index));
           btn.classList.remove('starred');
+          promptItem.dataset.starred = 'false';
         } else {
           // 添加星标
-          this.starredPrompts.push({ category, index, title: btn.parentElement.parentElement.querySelector('.prompt-title').textContent });
+          this.starredPrompts.push({ category, index: parseInt(index), title: promptTitle });
           btn.classList.add('starred');
+          promptItem.dataset.starred = 'true';
+        }
+
+        // 更新星标数量显示
+        const starredCountTag = shadowRoot.querySelector('.filter-starred');
+        if (starredCountTag) {
+          // 获取星标标签内的文本节点并更新数量
+          starredCountTag.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 2px;">
+              <path d="M8 1.3l1.9 4.5 4.8.4-3.5-3.7 3.5-1.2-4.8-4.8-.4 3.5-3.7-3.5 4.8.4z"/>
+            </svg>
+            星标 (${this.starredPrompts.length})
+          `;
         }
 
         // 保存到存储
