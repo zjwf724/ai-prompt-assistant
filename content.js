@@ -1999,9 +1999,8 @@ class PromptAssistant {
     // 星标按钮点击事件
     shadowRoot.querySelectorAll('.star-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        e.preventDefault();  // 阻止默认行为
-        e.stopPropagation(); // 防止触发卡片点击和外部关闭
-        e.stopImmediatePropagation(); // 确保没有其他监听器运行
+        e.preventDefault();
+        e.stopPropagation();
 
         const category = btn.dataset.category;
         const index = parseInt(btn.dataset.index);
@@ -2046,7 +2045,7 @@ class PromptAssistant {
         if (currentFilter === 'starred') {
           filterPrompts();
         }
-      }, { capture: true }); // 在捕获阶段处理
+      });
     });
 
     // 关闭按钮
@@ -2054,25 +2053,17 @@ class PromptAssistant {
       this.closePopup();
     });
 
-    // 点击外部关闭（Shadow DOM 兼容）- 延迟检查避免误判
-    const closeOnOutsideClick = (e) => {
-      // 使用 setTimeout 延迟检查，让所有点击事件处理器先执行
-      setTimeout(() => {
-        // 检查弹窗是否仍然存在
-        if (!this.currentPopup || !document.body.contains(this.currentPopup)) {
-          return;
-        }
-        // 检查点击目标是否在弹窗内
-        const path = e.composedPath();
-        if (!path.includes(this.currentPopup)) {
-          this.closePopup();
-        }
-      }, 10);
+    // 点击外部关闭 - 使用 mousedown 代替 click 避免冲突
+    const closeOnOutsideMouseDown = (e) => {
+      const path = e.composedPath();
+      if (!path.includes(this.currentPopup)) {
+        this.closePopup();
+        document.removeEventListener('mousedown', closeOnOutsideMouseDown);
+      }
     };
-    // 延迟添加外部点击监听，确保所有内部事件监听器已设置
     setTimeout(() => {
-      document.addEventListener('click', closeOnOutsideClick, { capture: true });
-    }, 150);
+      document.addEventListener('mousedown', closeOnOutsideMouseDown);
+    }, 100);
 
     // 提示词点击事件（点击提示词主体插入内容）
     shadowRoot.querySelectorAll('.prompt-item').forEach(item => {
