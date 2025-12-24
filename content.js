@@ -1292,16 +1292,48 @@ class PromptAssistant {
       this.closePopup();
     }
 
-    const popup = document.createElement('div');
-    popup.className = 'prompt-assistant-popup';
+    // 创建 Shadow DOM 容器
+    const shadowHost = document.createElement('div');
+    shadowHost.className = 'prompt-assistant-shadow-host';
 
-    // 扁平化所有提示词（用于搜索和两列显示）
+    // 设置容器定位样式
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const popupWidth = 480;
+    const popupHeight = Math.min(600, viewportHeight - 40);
+    const left = (viewportWidth - popupWidth) / 2;
+    const top = (viewportHeight - popupHeight) / 2;
+
+    shadowHost.style.cssText = `
+      position: fixed !important;
+      left: ${left}px !important;
+      top: ${top}px !important;
+      width: ${popupWidth}px !important;
+      height: ${popupHeight}px !important;
+      z-index: 2147483647 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    `;
+
+    // 创建 Shadow Root
+    const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+
+    // 在 Shadow DOM 中添加样式
+    const style = document.createElement('style');
+    style.textContent = this.getPopupStyles(popupHeight);
+    shadowRoot.appendChild(style);
+
+    // 扁平化所有提示词
     const allPrompts = [];
     Object.entries(this.prompts).forEach(([category, prompts]) => {
       prompts.forEach((prompt, index) => {
         allPrompts.push({ ...prompt, category, index });
       });
     });
+
+    // 创建弹窗元素
+    const popup = document.createElement('div');
+    popup.className = 'prompt-assistant-popup';
 
     // 构建HTML
     popup.innerHTML = `
@@ -1364,60 +1396,297 @@ class PromptAssistant {
       </div>
     `;
 
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    // 将弹窗添加到 Shadow DOM
+    shadowRoot.appendChild(popup);
 
-    // 使用最保守的方式：完全居中
-    const popupWidth = 480;
-    const popupHeight = Math.min(600, viewportHeight - 40);
-    const left = (viewportWidth - popupWidth) / 2;
-    const top = (viewportHeight - popupHeight) / 2;
+    // 将容器添加到页面
+    document.body.appendChild(shadowHost);
 
-    // 设置弹窗样式
-    popup.style.cssText = `
-      position: fixed !important;
-      left: ${left}px !important;
-      top: ${top}px !important;
-      width: ${popupWidth}px !important;
-      height: ${popupHeight}px !important;
-      z-index: 2147483647 !important;
-      margin: 0 !important;
-      transform: none !important;
-      display: flex !important;
-      flex-direction: column !important;
-    `;
+    console.log('[弹窗定位 Shadow DOM]', { left, top, popupWidth, popupHeight, viewportWidth, viewportHeight });
 
-    // 插入到body
-    document.body.appendChild(popup);
-
-    // 设置内容区域高度
-    const header = popup.querySelector('.popup-header');
-    const contentArea = popup.querySelector('.popup-content');
-    const addBtn = popup.querySelector('.add-prompt-btn');
-
-    if (header && contentArea) {
-      // 获取头部实际高度
-      const headerHeight = header.offsetHeight || 120;
-      const btnHeight = addBtn ? addBtn.offsetHeight || 50 : 50;
-      const contentHeight = popupHeight - headerHeight - btnHeight - 10;
-
-      contentArea.style.cssText = `
-        flex: 1 !important;
-        min-height: ${contentHeight}px !important;
-        overflow-y: auto !important;
-      `;
-    }
-
-    console.log('[弹窗定位]', { left, top, popupWidth, popupHeight, viewportWidth, viewportHeight });
-
-    this.currentPopup = popup;
+    // 保存引用，currentPopup 现在指向 shadowHost
+    this.currentPopup = shadowHost;
+    this.currentPopupShadowRoot = shadowRoot;
 
     // 添加事件监听
-    this.setupPopupEvents(popup, inputElement);
+    this.setupPopupEvents(shadowRoot, inputElement);
+  }
+
+  // 获取弹窗样式（用于 Shadow DOM）
+  getPopupStyles(popupHeight) {
+    const contentHeight = popupHeight - 150;
+    return `
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      .prompt-assistant-popup {
+        width: 100%;
+        height: 100%;
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        display: flex;
+        flex-direction: column;
+      }
+      .popup-header {
+        padding: 0;
+        background: transparent;
+        display: flex;
+        flex-direction: column;
+        border-bottom: 1px solid #eee;
+        flex-shrink: 0;
+      }
+      .popup-header-top {
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .popup-header h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #222;
+      }
+      .header-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .close-btn, .mode-toggle-btn {
+        background: #f5f5f5;
+        border: none;
+        color: #666;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 6px;
+        transition: all 0.15s;
+        line-height: 1;
+      }
+      .close-btn:hover, .mode-toggle-btn:hover {
+        background: #e0e0e0;
+        color: #333;
+      }
+      .mode-toggle-btn.active {
+        background: #4CAF50;
+        color: white;
+      }
+      .mode-toggle-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .popup-search {
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      .popup-search input {
+        width: 100%;
+        padding: 10px 14px 10px 36px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 14px;
+        background: #f9f9f9;
+        transition: all 0.2s;
+      }
+      .popup-search input:focus {
+        outline: none;
+        border-color: #4CAF50;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+      }
+      .popup-search-wrapper {
+        position: relative;
+      }
+      .popup-search-wrapper svg {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #999;
+        pointer-events: none;
+      }
+      .popup-filters {
+        padding: 8px 16px;
+        display: flex;
+        gap: 8px;
+        border-bottom: 1px solid #f0f0f0;
+        overflow-x: auto;
+        flex-shrink: 0;
+      }
+      .popup-filters::-webkit-scrollbar {
+        height: 0;
+      }
+      .filter-tag {
+        padding: 6px 14px;
+        background: #f5f5f5;
+        border: none;
+        border-radius: 20px;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.2s;
+        color: #666;
+      }
+      .filter-tag:hover {
+        background: #e8e8e8;
+      }
+      .filter-tag.active {
+        background: #4CAF50;
+        color: white;
+      }
+      .popup-content {
+        padding: 12px 16px;
+        flex: 1;
+        overflow-y: auto;
+        min-height: ${contentHeight}px;
+      }
+      .prompt-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+      .prompt-item {
+        background: #f8f8f8;
+        border-radius: 10px;
+        padding: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        border: 2px solid transparent;
+      }
+      .prompt-item:hover {
+        background: #f0f0f0;
+        border-color: #4CAF50;
+      }
+      .prompt-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      .prompt-preview {
+        color: #666;
+        font-size: 12px;
+        line-height: 1.4;
+        max-height: 2.8em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .item-mode-actions {
+        display: none;
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        gap: 4px;
+      }
+      .edit-mode .item-mode-actions,
+      .delete-mode .item-mode-actions {
+        display: flex;
+      }
+      .edit-mode .prompt-item,
+      .delete-mode .prompt-item {
+        padding-right: 60px;
+      }
+      .item-action-btn {
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        color: #666;
+      }
+      .item-action-btn:hover {
+        background: #4CAF50;
+        color: white;
+      }
+      .item-edit-btn:hover {
+        background: #2196F3;
+      }
+      .item-delete-btn:hover {
+        background: #f44336;
+      }
+      .add-prompt-btn {
+        width: 100%;
+        margin-top: 12px;
+        padding: 12px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+        flex-shrink: 0;
+      }
+      .add-prompt-btn:hover {
+        background: #45a049;
+      }
+      .no-prompts {
+        grid-column: 1 / -1;
+        text-align: center;
+        color: #999;
+        padding: 40px 20px;
+      }
+      .confirm-dialog {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        z-index: 10000;
+        min-width: 300px;
+      }
+      .confirm-dialog h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        color: #333;
+      }
+      .confirm-dialog p {
+        color: #666;
+        margin-bottom: 20px;
+      }
+      .confirm-dialog-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+      }
+      .confirm-btn {
+        padding: 8px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .cancel-btn {
+        background: #f5f5f5;
+        color: #666;
+      }
+      .delete-confirm-btn {
+        background: #d32f2f;
+        color: white;
+      }
+    `;
   }
 
   // 设置弹窗事件
-  setupPopupEvents(popup, inputElement) {
+  setupPopupEvents(shadowRoot, inputElement) {
+    // shadowRoot 是 Shadow Root，popup 是实际的弹窗元素
+    const popup = shadowRoot.querySelector('.prompt-assistant-popup');
+
     // 存储当前过滤状态
     let currentFilter = 'all';
     let currentSearch = '';
@@ -1430,20 +1699,20 @@ class PromptAssistant {
 
       if (mode === 'edit') {
         popup.classList.add('edit-mode');
-        popup.querySelector('#edit-mode-btn').classList.add('active');
-        popup.querySelector('#delete-mode-btn').classList.remove('active');
+        shadowRoot.getElementById('edit-mode-btn').classList.add('active');
+        shadowRoot.getElementById('delete-mode-btn').classList.remove('active');
       } else if (mode === 'delete') {
         popup.classList.add('delete-mode');
-        popup.querySelector('#delete-mode-btn').classList.add('active');
-        popup.querySelector('#edit-mode-btn').classList.remove('active');
+        shadowRoot.getElementById('delete-mode-btn').classList.add('active');
+        shadowRoot.getElementById('edit-mode-btn').classList.remove('active');
       } else {
-        popup.querySelector('#edit-mode-btn').classList.remove('active');
-        popup.querySelector('#delete-mode-btn').classList.remove('active');
+        shadowRoot.getElementById('edit-mode-btn').classList.remove('active');
+        shadowRoot.getElementById('delete-mode-btn').classList.remove('active');
       }
     };
 
     // 编辑模式切换按钮
-    popup.querySelector('#edit-mode-btn').addEventListener('click', () => {
+    shadowRoot.getElementById('edit-mode-btn').addEventListener('click', () => {
       if (currentMode === 'edit') {
         setMode('normal');
       } else {
@@ -1452,7 +1721,7 @@ class PromptAssistant {
     });
 
     // 删除模式切换按钮
-    popup.querySelector('#delete-mode-btn').addEventListener('click', () => {
+    shadowRoot.getElementById('delete-mode-btn').addEventListener('click', () => {
       if (currentMode === 'delete') {
         setMode('normal');
       } else {
@@ -1462,7 +1731,7 @@ class PromptAssistant {
 
     // 过滤提示词的函数
     const filterPrompts = () => {
-      const promptItems = popup.querySelectorAll('.prompt-item');
+      const promptItems = shadowRoot.querySelectorAll('.prompt-item');
       let visibleCount = 0;
 
       promptItems.forEach(item => {
@@ -1488,29 +1757,29 @@ class PromptAssistant {
       });
 
       // 显示/隐藏无结果提示
-      let noResults = popup.querySelector('.no-results');
+      let noResults = shadowRoot.querySelector('.no-results');
       if (visibleCount === 0 && !noResults) {
         noResults = document.createElement('div');
         noResults.className = 'no-results';
         noResults.textContent = currentSearch ? '没有找到匹配的提示词' : '该分类下暂无提示词';
-        popup.querySelector('.prompt-grid').appendChild(noResults);
+        shadowRoot.querySelector('.prompt-grid').appendChild(noResults);
       } else if (visibleCount > 0 && noResults) {
         noResults.remove();
       }
     };
 
     // 搜索输入事件
-    const searchInput = popup.querySelector('#prompt-search-input');
+    const searchInput = shadowRoot.querySelector('#prompt-search-input');
     searchInput.addEventListener('input', (e) => {
       currentSearch = e.target.value;
       filterPrompts();
     });
 
     // 过滤标签点击事件
-    popup.querySelectorAll('.filter-tag').forEach(tag => {
+    shadowRoot.querySelectorAll('.filter-tag').forEach(tag => {
       tag.addEventListener('click', () => {
         // 更新激活状态
-        popup.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
+        shadowRoot.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
         tag.classList.add('active');
 
         // 更新当前过滤
@@ -1520,7 +1789,7 @@ class PromptAssistant {
     });
 
     // 关闭按钮
-    popup.querySelector('.close-btn').addEventListener('click', () => {
+    shadowRoot.querySelector('.close-btn').addEventListener('click', () => {
       this.closePopup();
     });
 
@@ -1536,7 +1805,7 @@ class PromptAssistant {
     }, 100);
 
     // 提示词点击事件（点击提示词主体插入内容）
-    popup.querySelectorAll('.prompt-item').forEach(item => {
+    shadowRoot.querySelectorAll('.prompt-item').forEach(item => {
       item.addEventListener('click', (e) => {
         // 在编辑/删除模式下，点击操作按钮时不执行插入
         if (e.target.closest('.item-action-btn')) {
@@ -1580,7 +1849,7 @@ class PromptAssistant {
     });
 
     // 编辑按钮点击事件
-    popup.querySelectorAll('.item-edit-btn').forEach(btn => {
+    shadowRoot.querySelectorAll('.item-edit-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const category = btn.dataset.category;
@@ -1590,7 +1859,7 @@ class PromptAssistant {
     });
 
     // 删除按钮点击事件
-    popup.querySelectorAll('.item-delete-btn').forEach(btn => {
+    shadowRoot.querySelectorAll('.item-delete-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const category = btn.dataset.category;
@@ -1601,7 +1870,7 @@ class PromptAssistant {
     });
 
     // 添加新提示词
-    popup.querySelector('.add-prompt-btn').addEventListener('click', () => {
+    shadowRoot.querySelector('.add-prompt-btn').addEventListener('click', () => {
       // 传递当前选中的分类过滤器
       this.showAddPromptDialog(currentFilter === 'all' ? null : currentFilter);
     });
