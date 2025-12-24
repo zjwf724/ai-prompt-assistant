@@ -180,6 +180,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (message.type === 'GET_STARRED_PROMPTS') {
+    // 获取星标提示词
+    chrome.storage.local.get(['starredPrompts'], (result) => {
+      sendResponse(result.starredPrompts || []);
+    });
+    return true;
+  }
+
+  if (message.type === 'SAVE_STARRED_PROMPTS') {
+    // 保存星标提示词
+    chrome.storage.local.set({ starredPrompts: message.starredPrompts }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
 });
 
 // 监听标签页更新，检测AI网站

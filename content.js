@@ -11,6 +11,7 @@ class PromptAssistant {
     this.currentSite = this.detectSite();
     this.floatingIcon = null;          // 单一悬浮球
     this.currentFocusedInput = null;    // 当前聚焦的输入框
+    this.starredPrompts = [];           // 星标的提示词列表
     this.init();
   }
 
@@ -980,6 +981,10 @@ class PromptAssistant {
 
       const settingsResponse = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
       this.settings = settingsResponse || {};
+
+      // 加载星标数据
+      const starredResponse = await chrome.runtime.sendMessage({ type: 'GET_STARRED_PROMPTS' });
+      this.starredPrompts = starredResponse || [];
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -1354,6 +1359,9 @@ class PromptAssistant {
     const popup = document.createElement('div');
     popup.className = 'prompt-assistant-popup';
 
+    // 获取星标提示词数量
+    const starredPrompts = this.starredPrompts || [];
+
     // 构建HTML
     popup.innerHTML = `
       <div class="popup-header">
@@ -1383,6 +1391,12 @@ class PromptAssistant {
         </div>
         <div class="popup-filters">
           <button class="filter-tag active" data-filter="all">全部 (${allPrompts.length})</button>
+          <button class="filter-tag filter-starred" data-filter="starred">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 2px;">
+              <path d="M8 1.3l1.9 4.5 4.8.4-3.5-3.7 3.5-1.2-4.8-4.8-.4 3.5-3.7-3.5 4.8.4 1.9-4.5z"/>
+            </svg>
+            星标 (${starredPrompts.length})
+          </button>
           ${Object.keys(this.prompts).map(cat => `
             <button class="filter-tag" data-filter="${cat}">${cat}</button>
           `).join('')}
@@ -1391,9 +1405,18 @@ class PromptAssistant {
       <div class="popup-content">
         <div class="prompt-grid" id="prompt-grid">
           ${allPrompts.length === 0 ? '<div class="no-prompts">暂无提示词，请先在插件设置中添加</div>' :
-            allPrompts.map(prompt => `
-              <div class="prompt-item" data-category="${prompt.category}" data-index="${prompt.index}">
-                <div class="prompt-title">${this.escapeHtml(prompt.title)}</div>
+            allPrompts.map(prompt => {
+              const isStarred = starredPrompts.some(s => s.category === prompt.category && s.index === prompt.index);
+              return `
+              <div class="prompt-item" data-category="${prompt.category}" data-index="${prompt.index}" data-starred="${isStarred}">
+                <div class="prompt-header">
+                  <div class="prompt-title">${this.escapeHtml(prompt.title)}</div>
+                  <button class="star-btn ${isStarred ? 'starred' : ''}" data-category="${prompt.category}" data-index="${prompt.index}" title="星标">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 1.3l1.9 4.5 4.8.4-3.5-3.7 3.5-1.2-4.8-4.8-.4 3.5-3.7-3.5 4.8.4z"/>
+                    </svg>
+                  </button>
+                </div>
                 <div class="prompt-preview">${this.escapeHtml(prompt.content)}</div>
                 <div class="item-mode-actions">
                   <button class="item-action-btn item-edit-btn" data-category="${prompt.category}" data-index="${prompt.index}" title="编辑">
@@ -1666,6 +1689,40 @@ class PromptAssistant {
         color: #999;
         padding: 40px 20px;
       }
+      /* 星标按钮样式 */
+      .prompt-item .prompt-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .star-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        color: #ccc;
+        transition: all 0.2s;
+        flex-shrink: 0;
+      }
+      .star-btn:hover {
+        color: #FFD700;
+        transform: scale(1.2);
+      }
+      .star-btn.starred {
+        color: #FFD700;
+      }
+      .star-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .filter-starred svg {
+        fill: #FFD700;
+      }
+      .filter-starred.active {
+        background: #FFF8E1;
+        color: #F57C00;
+      }
       .confirm-dialog {
         position: fixed;
         top: 50%;
@@ -1768,7 +1825,15 @@ class PromptAssistant {
         const preview = item.querySelector('.prompt-preview').textContent;
 
         // 检查分类过滤
-        const matchesFilter = currentFilter === 'all' || category === currentFilter;
+        let matchesFilter = false;
+        if (currentFilter === 'all') {
+          matchesFilter = true;
+        } else if (currentFilter === 'starred') {
+          // 星标过滤：检查是否在星标列表中
+          matchesFilter = this.starredPrompts.some(s => s.category === category && s.index === item.dataset.index);
+        } else {
+          matchesFilter = category === currentFilter;
+        }
 
         // 检查搜索过滤
         const searchText = currentSearch.toLowerCase();
@@ -1813,6 +1878,38 @@ class PromptAssistant {
         // 更新当前过滤
         currentFilter = tag.dataset.filter;
         filterPrompts();
+      });
+    });
+
+    // 星标按钮点击事件
+    shadowRoot.querySelectorAll('.star-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation(); // 防止触发卡片点击
+
+        const category = btn.dataset.category;
+        const index = btn.dataset.index;
+        const isStarred = this.starredPrompts.some(s => s.category === category && s.index === index);
+
+        if (isStarred) {
+          // 取消星标
+          this.starredPrompts = this.starredPrompts.filter(s => !(s.category === category && s.index === index));
+          btn.classList.remove('starred');
+        } else {
+          // 添加星标
+          this.starredPrompts.push({ category, index, title: btn.parentElement.parentElement.querySelector('.prompt-title').textContent });
+          btn.classList.add('starred');
+        }
+
+        // 保存到存储
+        await chrome.runtime.sendMessage({
+          type: 'SAVE_STARRED_PROMPTS',
+          starredPrompts: this.starredPrompts
+        });
+
+        // 如果当前在星标过滤视图，重新过滤
+        if (currentFilter === 'starred') {
+          filterPrompts();
+        }
       });
     });
 
