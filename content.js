@@ -1127,9 +1127,14 @@ class PromptAssistant {
       </svg>
     `;
 
-    // 初始隐藏
-    icon.style.opacity = '0';
-    icon.style.pointerEvents = 'none';
+    // 初始半透明可见，默认定位在右侧中间
+    icon.style.opacity = '0.5';
+    icon.style.pointerEvents = 'auto';
+    icon.style.position = 'fixed';
+    icon.style.right = '8px';
+    icon.style.top = '50%';
+    icon.style.transform = 'translateY(-50%)';
+    icon.style.transition = 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
 
     // 点击事件
     icon.addEventListener('click', (e) => {
