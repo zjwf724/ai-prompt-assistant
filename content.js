@@ -1436,7 +1436,8 @@ class PromptAssistant {
       promptItemsHtml = '<div class="no-prompts">暂无提示词，请先在插件设置中添加</div>';
     } else {
       promptItemsHtml = allPrompts.map(prompt => {
-        const isStarred = starredPrompts.some(s => s.category === prompt.category && s.index === prompt.index);
+        // 使用 == 比较以处理类型差异（数字 vs 字符串）
+        const isStarred = starredPrompts.some(s => s.category === prompt.category && s.index == prompt.index);
         return `<div class="prompt-item" data-category="${this.escapeHtml(prompt.category)}" data-index="${prompt.index}" data-starred="${isStarred}">
           <div class="prompt-header">
             <div class="prompt-title">${this.escapeHtml(prompt.title)}</div>
