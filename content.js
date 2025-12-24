@@ -1403,11 +1403,16 @@ class PromptAssistant {
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
 
-    // 关键：设置内容区域的 max-height，确保能滚动
+    // 设置弹窗整体高度，确保内容有足够空间
+    const popupHeight = Math.min(600, viewportHeight - top - margin);
+    popup.style.height = `${popupHeight}px`;
+
+    // 设置内容区域的高度
     const contentArea = popup.querySelector('.popup-content');
     if (contentArea) {
-      const contentMaxHeight = viewportHeight - top - margin - 150; // 150px是头部高度
-      contentArea.style.maxHeight = `${Math.max(200, contentMaxHeight)}px`;
+      // 头部大约150px，剩余给内容区域
+      const contentHeight = popupHeight - 150;
+      contentArea.style.height = `${Math.max(300, contentHeight)}px`;
       contentArea.style.overflowY = 'auto';
     }
 
