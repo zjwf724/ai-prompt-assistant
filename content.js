@@ -1494,8 +1494,8 @@ class PromptAssistant {
                   </button>
                 </div>
               </div>
-            `).join('')
-          }
+            `;
+            }).join('')
         </div>
         <button class="add-prompt-btn">+ 添加新提示词</button>
       </div>
