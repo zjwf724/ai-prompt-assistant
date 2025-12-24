@@ -917,15 +917,15 @@ class PromptAssistant {
             console.log(`[网站检查] 子域名格式: "${baseDomain}" -> ${match}`);
             return match;
           }
-          // 处理 domain.com 格式
-          const match = currentHostname.includes(site) || currentHostname === site;
+          // 处理 domain.com 格式 - 精确匹配或完全相等
+          const match = currentHostname === site || currentHostname.endsWith('.' + site);
           console.log(`[网站检查] 完全匹配: "${site}" -> ${match}`);
           return match;
         });
       } else {
-        // 如果获取失败，默认启用（降级策略）
-        console.warn('[网站检查] 无法获取启用列表，默认启用插件');
-        isSiteEnabled = true;
+        // 如果获取失败或列表为空，不启用插件
+        console.warn('[网站检查] 无法获取启用列表或列表为空，插件不工作');
+        isSiteEnabled = false;
       }
 
       console.log('[网站检查] 最终是否启用:', isSiteEnabled);
@@ -955,9 +955,7 @@ class PromptAssistant {
       this.startFloatingIconCleanup();
     } catch (error) {
       console.error('AI Prompt Assistant 初始化失败:', error);
-      // 即使初始化失败，也尝试创建悬浮球（降级策略）
-      this.injectStyles();
-      this.createFloatingIcon();
+      // 初始化失败时不创建悬浮球
     }
   }
 
