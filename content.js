@@ -1001,10 +1001,48 @@ class PromptAssistant {
 
       // 加载星标数据
       const starredResponse = await chrome.runtime.sendMessage({ type: 'GET_STARRED_PROMPTS' });
-      this.starredPrompts = starredResponse || [];
+      const rawStarredPrompts = starredResponse || [];
+
+      // 清理无效的星标引用（提示词已被删除或索引变化）
+      this.starredPrompts = this.cleanStarredPrompts(rawStarredPrompts);
     } catch (error) {
       console.error('加载数据失败:', error);
     }
+  }
+
+  // 清理无效的星标引用
+  cleanStarredPrompts(starredList) {
+    const validStarred = [];
+    const seen = new Set(); // 用于去重
+
+    starredList.forEach(star => {
+      const { category, index } = star;
+
+      // 检查提示词是否仍然存在
+      if (this.prompts[category] && this.prompts[category][index]) {
+        // 使用 category:index 作为唯一标识进行去重
+        const key = `${category}:${index}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          // 确保索引是数字类型
+          validStarred.push({
+            category,
+            index: parseInt(index),
+            title: star.title || this.prompts[category][index].title
+          });
+        }
+      }
+    });
+
+    // 如果清理后有变化，保存清理后的数据
+    if (validStarred.length !== starredList.length) {
+      chrome.runtime.sendMessage({
+        type: 'SAVE_STARRED_PROMPTS',
+        starredPrompts: validStarred
+      }).catch(e => console.error('保存清理后的星标数据失败:', e));
+    }
+
+    return validStarred;
   }
 
   // 查找输入框元素
@@ -1436,8 +1474,9 @@ class PromptAssistant {
       promptItemsHtml = '<div class="no-prompts">暂无提示词，请先在插件设置中添加</div>';
     } else {
       promptItemsHtml = allPrompts.map(prompt => {
-        // 使用 == 比较以处理类型差异（数字 vs 字符串）
-        const isStarred = starredPrompts.some(s => s.category === prompt.category && s.index == prompt.index);
+        // 使用组合键检查是否已星标
+        const starKey = `${prompt.category}:${prompt.index}`;
+        const isStarred = starredPrompts.some(s => `${s.category}:${s.index}` === starKey);
         return `<div class="prompt-item" data-category="${this.escapeHtml(prompt.category)}" data-index="${prompt.index}" data-starred="${isStarred}">
           <div class="prompt-header">
             <div class="prompt-title">${this.escapeHtml(prompt.title)}</div>
@@ -1897,7 +1936,7 @@ class PromptAssistant {
 
       promptItems.forEach(item => {
         const category = item.dataset.category;
-        const index = item.dataset.index;
+        const index = parseInt(item.dataset.index);
         const title = item.querySelector('.prompt-title').textContent;
         const preview = item.querySelector('.prompt-preview').textContent;
 
@@ -1906,8 +1945,9 @@ class PromptAssistant {
         if (currentFilter === 'all') {
           matchesFilter = true;
         } else if (currentFilter === 'starred') {
-          // 星标过滤：检查是否在星标列表中（使用 == 比较，因为 dataset.index 是字符串）
-          matchesFilter = this.starredPrompts.some(s => s.category === category && s.index == index);
+          // 星标过滤：使用组合键检查
+          const starKey = `${category}:${index}`;
+          matchesFilter = this.starredPrompts.some(s => `${s.category}:${s.index}` === starKey);
         } else {
           matchesFilter = category === currentFilter;
         }
@@ -1964,21 +2004,23 @@ class PromptAssistant {
         e.stopPropagation(); // 防止触发卡片点击
 
         const category = btn.dataset.category;
-        const index = btn.dataset.index;
+        const index = parseInt(btn.dataset.index);
         const promptItem = btn.closest('.prompt-item');
         const promptTitle = promptItem.querySelector('.prompt-title').textContent;
 
-        // 检查是否已星标（使用 == 比较，因为 dataset.index 是字符串）
-        const isStarred = this.starredPrompts.some(s => s.category === category && s.index == index);
+        // 使用组合键检查是否已星标
+        const starKey = `${category}:${index}`;
+        const isStarred = this.starredPrompts.some(s => `${s.category}:${s.index}` === starKey);
 
         if (isStarred) {
-          // 取消星标
-          this.starredPrompts = this.starredPrompts.filter(s => !(s.category === category && s.index == index));
+          // 取消星标 - 过滤掉匹配的项
+          this.starredPrompts = this.starredPrompts.filter(s => `${s.category}:${s.index}` !== starKey);
           btn.classList.remove('starred');
           promptItem.dataset.starred = 'false';
         } else {
-          // 添加星标
-          this.starredPrompts.push({ category, index: parseInt(index), title: promptTitle });
+          // 添加星标 - 先确保不存在重复
+          this.starredPrompts = this.starredPrompts.filter(s => `${s.category}:${s.index}` !== starKey);
+          this.starredPrompts.push({ category, index, title: promptTitle });
           btn.classList.add('starred');
           promptItem.dataset.starred = 'true';
         }
@@ -1986,7 +2028,6 @@ class PromptAssistant {
         // 更新星标数量显示
         const starredCountTag = shadowRoot.querySelector('.filter-starred');
         if (starredCountTag) {
-          // 获取星标标签内的文本节点并更新数量
           starredCountTag.innerHTML = `
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 2px;">
               <path d="M8 1.3l1.9 4.5 4.8.4-3.5-3.7 3.5-1.2-4.8-4.8-.4 3.5-3.7-3.5 4.8.4z"/>
