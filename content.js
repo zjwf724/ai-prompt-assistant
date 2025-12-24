@@ -919,6 +919,9 @@ class PromptAssistant {
       // 动态注入CSS样式（仅在启用的网站上注入）
       this.injectStyles();
 
+      // 立即创建悬浮球（预加载，确保用户点击时立即可用）
+      this.createFloatingIcon();
+
       // 查找输入框
       this.findInputElements();
 
@@ -1132,8 +1135,40 @@ class PromptAssistant {
     icon.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+
+      // 如果有聚焦的输入框，使用它
       if (this.currentFocusedInput) {
         this.showPromptPopup(icon, this.currentFocusedInput);
+        return;
+      }
+
+      // 如果没有聚焦的输入框，尝试找到第一个可用输入框
+      let targetInput = null;
+
+      // 优先使用已缓存的输入框列表
+      if (this.inputElements.length > 0) {
+        targetInput = this.inputElements[0];
+      } else {
+        // 如果缓存为空，实时查找
+        const selectors = ['textarea', 'div[contenteditable="true"]', 'input[type="text"]', '[role="textbox"]'];
+        for (const selector of selectors) {
+          const element = document.querySelector(selector);
+          if (element && this.isTextInput(element)) {
+            targetInput = element;
+            break;
+          }
+        }
+      }
+
+      if (targetInput) {
+        // 聚焦找到的输入框并显示弹窗
+        targetInput.focus();
+        this.currentFocusedInput = targetInput;
+        this.handleInputFocus(targetInput);
+        this.showPromptPopup(icon, targetInput);
+      } else {
+        console.warn('[悬浮球点击] 未找到可用的输入框');
+        this.showToast('请先点击输入框');
       }
     });
 
