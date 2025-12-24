@@ -1127,6 +1127,21 @@ class PromptAssistant {
 
   // 创建单一的悬浮球
   createFloatingIcon() {
+    // 检查 body 是否存在
+    if (!document.body) {
+      console.warn('[悬浮球] document.body 不存在，延迟创建');
+      setTimeout(() => this.createFloatingIcon(), 100);
+      return;
+    }
+
+    // 如果已经存在，不重复创建
+    const existingIcon = document.getElementById('prompt-assistant-floating-icon');
+    if (existingIcon) {
+      console.log('[悬浮球] 悬浮球已存在，复用');
+      this.floatingIcon = existingIcon;
+      return;
+    }
+
     const icon = document.createElement('div');
     icon.className = 'prompt-assistant-icon';
     icon.id = 'prompt-assistant-floating-icon';
@@ -1138,13 +1153,21 @@ class PromptAssistant {
     `;
 
     // 初始半透明可见，默认定位在右侧中间
-    icon.style.opacity = '0.5';
-    icon.style.pointerEvents = 'auto';
-    icon.style.position = 'fixed';
-    icon.style.right = '8px';
-    icon.style.top = '50%';
-    icon.style.transform = 'translateY(-50%)';
-    icon.style.transition = 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+    // 使用 !important 确保样式不被网站 CSS 覆盖
+    icon.style.cssText = `
+      opacity: 0.5 !important;
+      pointer-events: auto !important;
+      position: fixed !important;
+      right: 8px !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      visibility: visible !important;
+    `;
 
     // 点击事件
     icon.addEventListener('click', (e) => {
@@ -1202,7 +1225,22 @@ class PromptAssistant {
 
     document.body.appendChild(icon);
     this.floatingIcon = icon;
-    console.log('[创建悬浮球] 悬浮球已创建');
+
+    // 验证悬浮球已成功添加到DOM
+    const verifyIcon = document.getElementById('prompt-assistant-floating-icon');
+    if (verifyIcon) {
+      const rect = verifyIcon.getBoundingClientRect();
+      console.log('[创建悬浮球] 悬浮球已创建', {
+        id: verifyIcon.id,
+        className: verifyIcon.className,
+        opacity: verifyIcon.style.opacity,
+        position: verifyIcon.style.position,
+        display: window.getComputedStyle(verifyIcon).display,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      });
+    } else {
+      console.error('[创建悬浮球] 悬浮球创建失败！未找到元素');
+    }
   }
 
   // 判断是否为文本输入元素
