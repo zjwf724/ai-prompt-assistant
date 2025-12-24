@@ -2001,7 +2001,8 @@ class PromptAssistant {
     // 星标按钮点击事件
     shadowRoot.querySelectorAll('.star-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        e.stopPropagation(); // 防止触发卡片点击
+        e.preventDefault();  // 阻止默认行为
+        e.stopPropagation(); // 防止触发卡片点击和外部关闭
 
         const category = btn.dataset.category;
         const index = parseInt(btn.dataset.index);
@@ -2064,14 +2065,14 @@ class PromptAssistant {
       }
     };
     setTimeout(() => {
-      document.addEventListener('click', closeOnOutsideClick);
+      document.addEventListener('click', closeOnOutsideClick, { capture: true });
     }, 100);
 
     // 提示词点击事件（点击提示词主体插入内容）
     shadowRoot.querySelectorAll('.prompt-item').forEach(item => {
       item.addEventListener('click', (e) => {
         // 在编辑/删除模式下，点击操作按钮时不执行插入
-        if (e.target.closest('.item-action-btn')) {
+        if (e.target.closest('.item-action-btn') || e.target.closest('.star-btn')) {
           return;
         }
 
