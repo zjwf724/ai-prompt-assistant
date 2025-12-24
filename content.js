@@ -1364,55 +1364,51 @@ class PromptAssistant {
       </div>
     `;
 
-    // 先插入 DOM 以便计算实际尺寸
+    // 先插入 DOM 以便获取初始尺寸
     document.body.appendChild(popup);
 
-    // 智能定位弹窗（确保在视口内完整显示）
     const iconRect = icon.getBoundingClientRect();
-    const popupRect = popup.getBoundingClientRect();
     const margin = 12;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // 水平定位策略：优先在悬浮球左侧，空间不足则右侧
+    // 先确定弹窗的最终高度
+    const popupHeight = Math.min(600, viewportHeight - margin * 2);
+
+    // 水平定位策略：优先在悬浮球左侧
     let left;
-    if (iconRect.left - popupRect.width - margin >= margin) {
-      // 左侧有足够空间
-      left = iconRect.left - popupRect.width - margin;
-    } else if (iconRect.right + popupRect.width + margin <= viewportWidth - margin) {
-      // 右侧有足够空间
+    if (iconRect.left - 480 - margin >= margin) {
+      left = iconRect.left - 480 - margin;
+    } else if (iconRect.right + 480 + margin <= viewportWidth - margin) {
       left = iconRect.right + margin;
     } else {
-      // 两侧都不够，居中显示
-      left = Math.max(margin, (viewportWidth - popupRect.width) / 2);
+      left = Math.max(margin, (viewportWidth - 480) / 2);
     }
 
-    // 垂直定位策略：优先与悬浮球顶部对齐，空间不足则向下调整
+    // 垂直定位：根据最终高度计算，确保完整显示
     let top = iconRect.top;
 
-    // 确保底部不超出视口
-    if (top + popupRect.height > viewportHeight - margin) {
-      top = viewportHeight - popupRect.height - margin;
+    // 确保底部不超出（使用最终高度）
+    if (top + popupHeight > viewportHeight - margin) {
+      top = viewportHeight - popupHeight - margin;
     }
 
-    // 确保顶部不超出视口
+    // 确保顶部不超出
     if (top < margin) {
       top = margin;
     }
 
+    // 一次性设置所有样式
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
-
-    // 设置弹窗整体高度，确保内容有足够空间
-    const popupHeight = Math.min(600, viewportHeight - top - margin);
     popup.style.height = `${popupHeight}px`;
+    popup.style.width = `480px`;
 
-    // 设置内容区域的高度
+    // 设置内容区域高度
     const contentArea = popup.querySelector('.popup-content');
     if (contentArea) {
-      // 头部大约150px，剩余给内容区域
-      const contentHeight = popupHeight - 150;
-      contentArea.style.height = `${Math.max(300, contentHeight)}px`;
+      const contentHeight = popupHeight - 150; // 减去头部高度
+      contentArea.style.height = `${Math.max(250, contentHeight)}px`;
       contentArea.style.overflowY = 'auto';
     }
 
