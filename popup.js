@@ -10,6 +10,26 @@ class PopupManager {
     this.init();
   }
 
+  // ==================== 辅助方法 ====================
+
+  // 通知所有标签页数据已更新
+  async notifyDataUpdate(messageType = 'PROMPTS_DATA_UPDATED') {
+    try {
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (tab.url && tab.url.startsWith('https://')) {
+          try {
+            await chrome.tabs.sendMessage(tab.id, { type: messageType });
+          } catch (e) {
+            // 标签页可能还没有加载content script，忽略错误
+          }
+        }
+      }
+    } catch (error) {
+      console.error('通知标签页失败:', error);
+    }
+  }
+
   // ==================== 初始化 ====================
   async init() {
     await this.loadData();
@@ -350,10 +370,12 @@ class PopupManager {
       // 保存新的（或更新现有的）
       const prompt = { title: newTitle, content: newContent };
 
-      // 如果是同一分类，直接更新
+      // 如果是同一分类，通过background.js更新以确保通知所有标签页
       if (newCategory === this.editingPrompt.category) {
         this.prompts[newCategory][this.editingPrompt.index] = prompt;
         await chrome.storage.local.set({ prompts: this.prompts });
+        // 通知所有标签页数据已更新
+        await this.notifyDataUpdate();
       } else {
         // 不同分类，先删除再添加
         await chrome.runtime.sendMessage({
@@ -489,7 +511,7 @@ class PopupManager {
     }
   }
 
-  renameCategory(oldName) {
+  async renameCategory(oldName) {
     const newName = prompt('请输入新的分类名称：', oldName);
     if (!newName || newName === oldName) return;
 
@@ -502,13 +524,13 @@ class PopupManager {
     this.prompts[newName] = this.prompts[oldName];
     delete this.prompts[oldName];
 
-    chrome.storage.local.set({ prompts: this.prompts }, async () => {
-      await this.loadData();
-      this.renderStats();
-      this.renderPromptsList();
-      this.renderCategoryList();
-      this.showToast('分类已重命名');
-    });
+    await chrome.storage.local.set({ prompts: this.prompts });
+    await this.notifyDataUpdate();
+    await this.loadData();
+    this.renderStats();
+    this.renderPromptsList();
+    this.renderCategoryList();
+    this.showToast('分类已重命名');
   }
 
   async deleteCategory(category) {
@@ -518,14 +540,10 @@ class PopupManager {
     }
 
     try {
-      await chrome.runtime.sendMessage({
-        type: 'DELETE_PROMPT',
-        data: { category, index: 0 }
-      });
-
       // 直接删除整个分类
       delete this.prompts[category];
       await chrome.storage.local.set({ prompts: this.prompts });
+      await this.notifyDataUpdate();
 
       await this.loadData();
       this.renderStats();
@@ -674,6 +692,7 @@ class PopupManager {
     try {
       await chrome.storage.local.set({ prompts: {} });
       this.prompts = {};
+      await this.notifyDataUpdate();
       this.renderStats();
       this.renderPromptsList();
       this.showToast('已清空所有提示词');
@@ -722,6 +741,8 @@ class PopupManager {
           }
           await chrome.storage.local.set({ prompts: merged });
           this.prompts = merged;
+          // 通知所有标签页数据已更新
+          await this.notifyDataUpdate();
         }
 
         // 更新设置（可选）

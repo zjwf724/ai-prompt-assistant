@@ -2983,6 +2983,30 @@ class PromptAssistant {
           }
         });
       }
+
+      // 监听提示词数据更新
+      if (message.type === 'PROMPTS_DATA_UPDATED') {
+        console.log('[数据同步] 提示词数据已更新，重新加载');
+        this.loadData().then(() => {
+          // 如果弹窗当前是打开的，重新渲染
+          if (this.currentPopup) {
+            this.closePopup();
+          }
+        });
+      }
+
+      // 监听星标数据更新
+      if (message.type === 'STARRED_DATA_UPDATED') {
+        console.log('[数据同步] 星标数据已更新，重新加载');
+        this.loadData().then(() => {
+          // 如果弹窗当前是打开的，重新渲染
+          if (this.currentPopup) {
+            this.closePopup();
+          }
+        });
+      }
+
+      return true;
     });
   }
 }

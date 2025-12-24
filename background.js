@@ -95,8 +95,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       prompts[category].push(prompt);
 
-      chrome.storage.local.set({ prompts }, () => {
+      chrome.storage.local.set({ prompts }, async () => {
         sendResponse({ success: true });
+
+        // 通知所有标签页数据已更新
+        const tabs = await chrome.tabs.query({});
+        for (const tab of tabs) {
+          if (tab.url && tab.url.startsWith('https://')) {
+            try {
+              await chrome.tabs.sendMessage(tab.id, { type: 'PROMPTS_DATA_UPDATED' });
+            } catch (e) {
+              // 标签页可能还没有加载content script，忽略错误
+            }
+          }
+        }
       });
     });
     return true;
@@ -116,8 +128,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           delete prompts[category];
         }
 
-        chrome.storage.local.set({ prompts }, () => {
+        chrome.storage.local.set({ prompts }, async () => {
           sendResponse({ success: true });
+
+          // 通知所有标签页数据已更新
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (tab.url && tab.url.startsWith('https://')) {
+              try {
+                await chrome.tabs.sendMessage(tab.id, { type: 'PROMPTS_DATA_UPDATED' });
+              } catch (e) {
+                // 标签页可能还没有加载content script，忽略错误
+              }
+            }
+          }
         });
       }
     });
@@ -191,8 +215,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'SAVE_STARRED_PROMPTS') {
     // 保存星标提示词
-    chrome.storage.local.set({ starredPrompts: message.starredPrompts }, () => {
+    chrome.storage.local.set({ starredPrompts: message.starredPrompts }, async () => {
       sendResponse({ success: true });
+
+      // 通知所有标签页星标数据已更新
+      const tabs = await chrome.tabs.query({});
+      for (const tab of tabs) {
+        if (tab.url && tab.url.startsWith('https://')) {
+          try {
+            await chrome.tabs.sendMessage(tab.id, { type: 'STARRED_DATA_UPDATED' });
+          } catch (e) {
+            // 标签页可能还没有加载content script，忽略错误
+          }
+        }
+      }
     });
     return true;
   }
