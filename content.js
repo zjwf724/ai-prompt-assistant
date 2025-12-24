@@ -1812,9 +1812,11 @@ class PromptAssistant {
       this.closePopup();
     });
 
-    // 点击外部关闭
+    // 点击外部关闭（Shadow DOM 兼容）
     const closeOnOutsideClick = (e) => {
-      if (!popup.contains(e.target)) {
+      // 使用 composedPath() 检查事件路径是否包含 shadowHost
+      const path = e.composedPath();
+      if (!path.includes(this.currentPopup)) {
         this.closePopup();
         document.removeEventListener('click', closeOnOutsideClick);
       }
