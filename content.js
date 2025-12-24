@@ -1364,53 +1364,51 @@ class PromptAssistant {
       </div>
     `;
 
-    // 先插入 DOM 以便获取初始尺寸
-    document.body.appendChild(popup);
-
-    const iconRect = icon.getBoundingClientRect();
-    const margin = 12;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // 先确定弹窗的最终高度
-    const popupHeight = Math.min(600, viewportHeight - margin * 2);
+    // 使用最保守的方式：完全居中
+    const popupWidth = 480;
+    const popupHeight = Math.min(600, viewportHeight - 40);
+    const left = (viewportWidth - popupWidth) / 2;
+    const top = (viewportHeight - popupHeight) / 2;
 
-    // 水平定位策略：优先在悬浮球左侧
-    let left;
-    if (iconRect.left - 480 - margin >= margin) {
-      left = iconRect.left - 480 - margin;
-    } else if (iconRect.right + 480 + margin <= viewportWidth - margin) {
-      left = iconRect.right + margin;
-    } else {
-      left = Math.max(margin, (viewportWidth - 480) / 2);
-    }
+    // 设置弹窗样式
+    popup.style.cssText = `
+      position: fixed !important;
+      left: ${left}px !important;
+      top: ${top}px !important;
+      width: ${popupWidth}px !important;
+      height: ${popupHeight}px !important;
+      z-index: 2147483647 !important;
+      margin: 0 !important;
+      transform: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+    `;
 
-    // 垂直定位：根据最终高度计算，确保完整显示
-    let top = iconRect.top;
-
-    // 确保底部不超出（使用最终高度）
-    if (top + popupHeight > viewportHeight - margin) {
-      top = viewportHeight - popupHeight - margin;
-    }
-
-    // 确保顶部不超出
-    if (top < margin) {
-      top = margin;
-    }
-
-    // 一次性设置所有样式
-    popup.style.left = `${left}px`;
-    popup.style.top = `${top}px`;
-    popup.style.height = `${popupHeight}px`;
-    popup.style.width = `480px`;
+    // 插入到body
+    document.body.appendChild(popup);
 
     // 设置内容区域高度
+    const header = popup.querySelector('.popup-header');
     const contentArea = popup.querySelector('.popup-content');
-    if (contentArea) {
-      const contentHeight = popupHeight - 150; // 减去头部高度
-      contentArea.style.height = `${Math.max(250, contentHeight)}px`;
-      contentArea.style.overflowY = 'auto';
+    const addBtn = popup.querySelector('.add-prompt-btn');
+
+    if (header && contentArea) {
+      // 获取头部实际高度
+      const headerHeight = header.offsetHeight || 120;
+      const btnHeight = addBtn ? addBtn.offsetHeight || 50 : 50;
+      const contentHeight = popupHeight - headerHeight - btnHeight - 10;
+
+      contentArea.style.cssText = `
+        flex: 1 !important;
+        min-height: ${contentHeight}px !important;
+        overflow-y: auto !important;
+      `;
     }
+
+    console.log('[弹窗定位]', { left, top, popupWidth, popupHeight, viewportWidth, viewportHeight });
 
     this.currentPopup = popup;
 
