@@ -76,18 +76,23 @@ class PromptAssistant {
 
       /* 提示词弹窗样式 - 全新设计 */
       .prompt-assistant-popup {
-        position: fixed;
+        position: fixed !important;
         width: 480px;
         max-width: calc(100vw - 40px);
         max-height: 70vh;
         background: #ffffff;
         border-radius: 16px;
-        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05);
         overflow: hidden;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 14px;
-        z-index: 1000000;
+        z-index: 2147483647 !important; /* 最大32位整数，确保在最顶层 */
         animation: popupFadeIn 0.2s ease;
+        /* 防止被网站CSS影响 */
+        transform: none !important;
+        filter: none !important;
+        will-change: auto !important;
+        isolation: isolate; /* 创建新的层叠上下文 */
       }
 
       @keyframes popupFadeIn {
@@ -1359,8 +1364,13 @@ class PromptAssistant {
       </div>
     `;
 
-    // 先插入 DOM 以便计算实际尺寸
-    document.body.appendChild(popup);
+    // 插入到 document.documentElement 而不是 body，避免被 body 的 transform 影响
+    // 使用 prepend 确保在其他元素之前
+    if (document.documentElement) {
+      document.documentElement.appendChild(popup);
+    } else {
+      document.body.appendChild(popup);
+    }
 
     // 智能定位弹窗（确保在视口内完整显示）
     const iconRect = icon.getBoundingClientRect();
