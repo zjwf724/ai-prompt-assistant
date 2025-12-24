@@ -1163,9 +1163,9 @@ class PromptAssistant {
     icon.className = 'prompt-assistant-icon';
     icon.id = 'prompt-assistant-floating-icon';
     icon.innerHTML = `
-      <svg viewBox="0 0 24 24" width="20" height="20">
-        <path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
-        <circle cx="19" cy="5" r="3" fill="#4CAF50"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" style="color: white;">
+        <path fill="white" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
+        <circle cx="19" cy="5" r="3" fill="#FFD700"/>
       </svg>
     `;
 
