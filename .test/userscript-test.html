@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>userscript-e2e-test</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 40px; }
+  #ta {
+    font-size: 16px; line-height: 28px;
+    padding: 6px 10px; border: 2px solid #999; box-sizing: border-box;
+    width: 320px; display: block;
+  }
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <textarea id="ta" spellcheck="false" placeholder="模拟AI输入框"></textarea>
+  <div id="results">running...</div>
+
+  <script>
+    // ===== GM shim：用 localStorage 模拟脚本管理器 =====
+    window.__apaMenuCommands = [];
+    window.GM_getValue = function (k, d) {
+      const raw = localStorage.getItem('apa_' + k);
+      return raw === null ? d : JSON.parse(raw);
+    };
+    window.GM_setValue = function (k, v) {
+      localStorage.setItem('apa_' + k, JSON.stringify(v));
+    };
+    window.GM_deleteValue = function (k) { localStorage.removeItem('apa_' + k); };
+    window.GM_addValueChangeListener = function () {}; // 跨标签页同步无法单页模拟
+    window.GM_registerMenuCommand = function (label, fn) {
+      window.__apaMenuCommands.push({ label, fn });
+    };
+
+    // ===== 预置数据（含启用当前测试站点） =====
+    (function seed() {
+      localStorage.clear();
+      GM_setValue('prompts', {
+        "角色扮演": [
+          { id: "p1", title: "专业翻译", content: "请扮演翻译家：" },
+          { id: "p2", title: "代码助手", content: "请分析代码：" }
+        ]
+      });
+      GM_setValue('settings', { showIcon: true, iconPosition: 'right', autoDetect: true, theme: 'auto' });
+      GM_setValue('starredPrompts', []);
+      GM_setValue('aiSites', [
+        { name: "DeepSeek", hostname: "chat.deepseek.com", enabled: true },
+        { name: "豆包", hostname: ".doubao.com", enabled: true },
+        { name: "腾讯元宝", hostname: "yuanbao.tencent.com", enabled: true },
+        { name: "测试站", hostname: "127.0.0.1", enabled: true }
+      ]);
+    })();
+  </script>
+
+  <!-- 被测脚本 -->
+  <script src="../userscript/ai-prompt-assistant.user.js"></script>
+
+  <script>
+    (function () {
+      const out = [];
+      let pass = 0, fail = 0;
+      const TOL = 6;
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+      function assert(name, ok, detail) {
+        ok ? pass++ : fail++;
+        out.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (detail ? ' | ' + detail : ''));
+      }
+
+      async function run() {
+        await sleep(300);
+
+        // ---------- T1: 悬浮球创建并停靠输入框首行 ----------
+        const ta = document.getElementById('ta');
+        const icon = document.getElementById('prompt-assistant-floating-icon');
+        assert('T1a 悬浮球已创建', !!icon);
+        if (icon) {
+          const iconCenter = parseFloat(icon.style.top) + 18;
+          const taRect = ta.getBoundingClientRect();
+          const line1Center = taRect.top + 6 + 2 + 14;
+          assert('T1b 停靠对齐首行', Math.abs(iconCenter - line1Center) <= TOL,
+            `center=${iconCenter.toFixed(1)} expect≈${line1Center.toFixed(1)}`);
+        }
+
+        // ---------- T2: 点击悬浮球 → 弹窗打开 ----------
+        icon && icon.click();
+        await sleep(200);
+        const host = document.querySelector('.prompt-assistant-shadow-host');
+        const sr = host && host.shadowRoot;
+        assert('T2 点击悬浮球打开弹窗', !!(sr && sr.querySelector('.prompt-assistant-popup')));
+
+        // ---------- T3: 顶栏按钮齐全（添加/编辑/删除/设置） ----------
+        if (sr) {
+          assert('T3 顶栏按钮',
+            !!(sr.getElementById('add-prompt-btn') && sr.getElementById('edit-mode-btn') &&
+               sr.getElementById('delete-mode-btn') && sr.getElementById('settings-btn')));
+        }
+
+        // ---------- T4: 添加提示词全流程（存储 + 弹窗刷新） ----------
+        if (sr) {
+          sr.getElementById('add-prompt-btn').click();
+          await sleep(100);
+          const dialog = sr.querySelector('.prompt-assistant-dialog');
+          assert('T4a 添加对话框打开', !!dialog);
+          if (dialog) {
+            dialog.querySelector('#prompt-category').value = '角色扮演';
+            dialog.querySelector('#prompt-title').value = '测试条目';
+            dialog.querySelector('#prompt-content').value = '这是插入内容测试';
+            dialog.querySelector('.save-btn').click();
+            await sleep(400);
+            const stored = GM_getValue('prompts', {});
+            assert('T4b 存储已写入',
+              (stored['角色扮演'] || []).length === 3 && stored['角色扮演'][2].id,
+              'count=' + (stored['角色扮演'] || []).length);
+            const host2 = document.querySelector('.prompt-assistant-shadow-host');
+            const sr2 = host2 && host2.shadowRoot;
+            assert('T4c 弹窗已刷新包含新条目',
+              !!(sr2 && [...sr2.querySelectorAll('.prompt-title')].some(el => el.textContent === '测试条目')));
+          }
+        }
+
+        // ---------- T5: 点击条目 → 插入 textarea ----------
+        if (sr) {
+          const host3 = document.querySelector('.prompt-assistant-shadow-host');
+          const sr3 = host3 && host3.shadowRoot;
+          const item = sr3 && sr3.querySelector('.prompt-item');
+          item && item.click();
+          await sleep(500);
+          assert('T5 点击条目插入输入框', ta.value.includes('请扮演翻译家：'), 'value="' + ta.value.slice(0, 20) + '..."');
+        }
+
+        // ---------- T6: 油猴菜单 + 设置面板 ----------
+        assert('T6a 菜单命令已注册', window.__apaMenuCommands.length >= 1);
+        if (window.__apaMenuCommands.length >= 1) {
+          window.__apaMenuCommands[0].fn();
+          await sleep(150);
+          const overlay = document.querySelector('.apa-settings-overlay');
+          assert('T6b 设置面板打开', !!overlay);
+          const siteItems = overlay ? overlay.querySelectorAll('.apa-site-item') : [];
+          assert('T6c 站点列表渲染', siteItems.length === 4, 'sites=' + siteItems.length);
+          const showIconCb = overlay && overlay.querySelector('#apa-showIcon');
+          assert('T6d 设置项渲染', !!(showIconCb && showIconCb.checked));
+        }
+
+        // ---------- T7: 站点禁用 → 图标销毁；启用 → 重建 ----------
+        const overlay2 = document.querySelector('.apa-settings-overlay');
+        const siteRow = overlay2 && [...overlay2.querySelectorAll('.apa-site-item')]
+          .find(row => row.textContent.includes('127.0.0.1'));
+        if (siteRow) {
+          const cb = siteRow.querySelector('input[type="checkbox"]');
+          cb.checked = false;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(300);
+          assert('T7a 禁用站点后图标销毁', !document.getElementById('prompt-assistant-floating-icon'));
+
+          const cb2 = document.querySelector('.apa-settings-overlay .apa-site-item input[type="checkbox"]');
+          const cbAgain = document.querySelectorAll('.apa-settings-overlay .apa-site-item')[3].querySelector('input');
+          cbAgain.checked = true;
+          cbAgain.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(300);
+          assert('T7b 重新启用后图标重建', !!document.getElementById('prompt-assistant-floating-icon'));
+        } else {
+          assert('T7 站点行定位（前置）', false, '未找到 127.0.0.1 站点行');
+        }
+
+        out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
+        document.getElementById('results').textContent = out.join('\n');
+        document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+      }
+
+      run();
+    })();
+  </script>
+</body>
+</html>

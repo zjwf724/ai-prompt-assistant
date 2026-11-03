@@ -28,7 +28,13 @@
 
 ## 🚀 安装与使用
 
-### 安装（开发者模式加载）
+### 安装（油猴脚本版，推荐）
+1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)
+2. 点击安装：[ai-prompt-assistant.user.js](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
+
+详见 [userscript/README.md](userscript/README.md)。
+
+### 安装（Chrome 扩展，开发者模式加载）
 1. 下载或克隆本仓库
 2. 打开 `chrome://extensions/`，开启右上角"开发者模式"
 3. 点击"加载已解压的扩展程序"，选择本项目文件夹
