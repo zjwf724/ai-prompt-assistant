@@ -262,6 +262,15 @@ function getPopupStyles(popupHeight) {
       background: #45a049;
       color: white;
     }
+    /* 顶栏"导入"按钮：与导出的镜像箭头靠颜色区分（导出灰、导入绿） */
+    .import-btn {
+      background: #4CAF50;
+      color: white;
+    }
+    .import-btn:hover {
+      background: #45a049;
+      color: white;
+    }
     .no-prompts {
       grid-column: 1 / -1;
       text-align: center;
