@@ -187,7 +187,7 @@ class PopupManager {
                 <path fill-rule="evenodd" d="M3 16a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/>
               </svg>
             </button>
-            <button class="mode-toggle-btn import-btn" id="import-btn" title="导入备份（从 JSON 文件恢复）">
+            <button class="mode-toggle-btn" id="import-btn" title="导入备份（从 JSON 文件恢复）">
               <svg viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v7.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 10.586V3a1 1 0 011-1zM3 16a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/>
               </svg>
