@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Prompt Assistant",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "AI网站提示词助手，快速保存和插入预设提示词",
   "permissions": [
     "storage",

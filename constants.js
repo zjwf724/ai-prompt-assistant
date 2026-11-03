@@ -93,7 +93,7 @@ const LAYOUT = {
 };
 
 // ==================== 版本号 ====================
-const EXT_VERSION = '1.4.0';
+const EXT_VERSION = '1.4.1';
 
 // ==================== 默认数据 ====================
 const DEFAULT_PROMPTS = {

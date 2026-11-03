@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Prompt Assistant
 // @namespace    https://github.com/zjwf724/ai-prompt-assistant
-// @version      1.4.0
+// @version      1.4.1
 // @description  AI网站提示词助手：输入框旁悬浮球一键插入预设提示词。光标跟随、分类/星标管理、站点自定义，数据完全本地化（无网络请求）
 // @author       zjwf724
 // @license      MIT
@@ -130,7 +130,7 @@
   };
 
   // ==================== 版本号 ====================
-  const EXT_VERSION = '1.4.0';
+  const EXT_VERSION = '1.4.1';
 
   // ==================== 默认数据 ====================
   const DEFAULT_PROMPTS = {

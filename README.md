@@ -1,6 +1,6 @@
 # AI Prompt Assistant
 
-![Version](https://img.shields.io/badge/version-1.4.0-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.4.1-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 一个 Chrome 扩展（Manifest V3）：在 AI 聊天网站的输入框旁显示悬浮球，一键插入你预设的常用提示词。支持分类管理、星标收藏、搜索过滤、多站点自定义，数据完全保存在本地。
 
@@ -120,6 +120,11 @@ python -m http.server 8642
 - 某些站点输入框在 iframe 内时无法识别（内容脚本默认只注入顶层框架）
 
 ## 📈 更新日志
+
+### v1.4.1 - 2026-11-03
+- 🐛 修复：插入的提示词在点击页面空白后消失——AI 站点输入框为 React/Vue/富文本编辑器受控组件，直接改 DOM 不进框架状态，失焦重渲染即被覆盖。textarea 改用原生原型 value setter + input 事件，contenteditable 改用 execCommand('insertText')（扩展版与油猴版同步修复）
+- 🔧 修复：提示词面板导出/导入图标方向对调（导出↑、导入↓）、统一灰色
+- 📦 发布：自本版起每次发布都会升级版本号并打 git 标签，避免 CDN 缓存不一致导致更新误判
 
 ### v1.4.0 - 2026-11-03
 - ✨ 新增：提示词面板顶栏导入/导出备份按钮（无需打开扩展弹窗即可备份恢复）
