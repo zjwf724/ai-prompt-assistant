@@ -164,6 +164,81 @@
           assert('T7 站点行定位（前置）', false, '未找到 127.0.0.1 站点行');
         }
 
+        // ---------- T8: 导入备份（提示词去重 + 星标 + 站点 + 设置，幂等） ----------
+        window.alert = () => {}; // importData 用 alert 提示，测试中静默
+        const overlayForImport = document.querySelector('.apa-settings-overlay');
+        const fileInput = overlayForImport && overlayForImport.querySelector('#apa-import-file');
+        if (fileInput) {
+          const backup = {
+            prompts: { "角色扮演": [
+              { id: "p1", title: "重复项应跳过", content: "dup" },
+              { id: "p_imp_1", title: "跨版迁移项", content: "from extension" }
+            ]},
+            starredPrompts: [{ id: "p_imp_1", category: "角色扮演", title: "跨版迁移项" }],
+            settings: { iconPosition: "left", hack: "x" },
+            aiSites: [{ name: "ZAI", hostname: ".z.ai", enabled: true }]
+          };
+          const dt = new DataTransfer();
+          dt.items.add(new File([JSON.stringify(backup)], 'backup.json', { type: 'application/json' }));
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(400);
+
+          const promptsAfter = GM_getValue('prompts', {});
+          const catAfter = (promptsAfter['角色扮演'] || []);
+          assert('T8a 提示词按 id 去重（只新增 1 条）',
+            catAfter.length === 4 && catAfter.some(p => p.id === 'p_imp_1') && !catAfter.some(p => p.title === '重复项应跳过'),
+            'count=' + catAfter.length);
+          assert('T8b 星标已导入', (GM_getValue('starredPrompts', [])).some(s => s.id === 'p_imp_1'));
+          assert('T8c 站点已导入', (GM_getValue('aiSites', [])).some(s => s.hostname === '.z.ai'));
+          assert('T8d 设置已合并且白名单外键被忽略',
+            GM_getValue('settings', {}).iconPosition === 'left' && !('hack' in GM_getValue('settings', {})));
+
+          // 同一备份二次导入 → 幂等
+          const dt2 = new DataTransfer();
+          dt2.items.add(new File([JSON.stringify(backup)], 'backup.json', { type: 'application/json' }));
+          fileInput.files = dt2.files;
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(400);
+          const promptsAgain = GM_getValue('prompts', {});
+          const sitesAgain = GM_getValue('aiSites', []);
+          assert('T8e 重复导入幂等',
+            (promptsAgain['角色扮演'] || []).length === 4 &&
+            (GM_getValue('starredPrompts', [])).filter(s => s.id === 'p_imp_1').length === 1 &&
+            sitesAgain.filter(s => s.hostname === '.z.ai').length === 1,
+            'prompts=' + (promptsAgain['角色扮演'] || []).length + ' sites=' + sitesAgain.length);
+        } else {
+          assert('T8 导入入口（前置）', false, '未找到导入文件输入框');
+        }
+
+        // ---------- T9: 导出备份格式（含全部分区，与扩展版互通） ----------
+        const overlayForExport = document.querySelector('.apa-settings-overlay');
+        const exportBtn = overlayForExport && overlayForExport.querySelector('#apa-export-btn');
+        if (exportBtn) {
+          let capturedBlob = null;
+          const origCreate = URL.createObjectURL;
+          const origClick = HTMLAnchorElement.prototype.click;
+          URL.createObjectURL = (b) => { capturedBlob = b; return 'blob:test'; };
+          HTMLAnchorElement.prototype.click = function () {};
+          try {
+            exportBtn.click();
+          } finally {
+            URL.createObjectURL = origCreate;
+            HTMLAnchorElement.prototype.click = origClick;
+          }
+          if (capturedBlob) {
+            const dump = JSON.parse(await capturedBlob.text());
+            assert('T9 导出含全部分区',
+              ['prompts', 'starredPrompts', 'settings', 'aiSites', 'exportDate', 'version']
+                .every(k => k in dump) && dump.version === '1.4.0',
+              'version=' + dump.version);
+          } else {
+            assert('T9 导出捕获（前置）', false, '未捕获到导出 Blob');
+          }
+        } else {
+          assert('T9 导出按钮（前置）', false, '未找到导出按钮');
+        }
+
         out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
         document.getElementById('results').textContent = out.join('\n');
         document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';

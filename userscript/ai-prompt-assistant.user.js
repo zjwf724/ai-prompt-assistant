@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Prompt Assistant
 // @namespace    https://github.com/zjwf724/ai-prompt-assistant
-// @version      1.3.0
+// @version      1.4.0
 // @description  AI网站提示词助手：输入框旁悬浮球一键插入预设提示词。光标跟随、分类/星标管理、站点自定义，数据完全本地化（无网络请求）
 // @author       zjwf724
 // @license      MIT
@@ -131,7 +131,7 @@
   };
 
   // ==================== 版本号 ====================
-  const EXT_VERSION = '1.3.0';
+  const EXT_VERSION = '1.4.0';
 
   // ==================== 默认数据 ====================
   const DEFAULT_PROMPTS = {
@@ -258,6 +258,102 @@
 
   function generateId() {
     return 'p' + Date.now().toString(36) + '_' + (++_idCounter);
+  }
+
+  // ==================== 导入合并（与扩展版 constants.js 的 applyImport 语义一致） ====================
+
+  /**
+   * 合并导入的备份数据（与 Chrome 扩展版备份格式双向兼容）
+   * - prompts：逐条校验，按 id 去重（重复导入幂等）
+   * - starredPrompts：按 id 去重合并
+   * - settings：白名单键 + 类型校验
+   * - aiSites：按 hostname 合并（已有则覆盖属性，没有则追加）
+   * @returns {Object} 未导入的分区为 null，附 addedPrompts/addedSites 统计
+   */
+  function applyImport(current, incoming) {
+    const result = { prompts: null, starredPrompts: null, settings: null, aiSites: null, addedPrompts: 0, addedSites: 0 };
+
+    if (incoming.prompts && typeof incoming.prompts === 'object') {
+      const merged = { ...(current.prompts || {}) };
+      const existingIds = new Set();
+      Object.values(current.prompts || {}).forEach(arr =>
+        (arr || []).forEach(p => p.id && existingIds.add(p.id))
+      );
+
+      for (const [category, prompts] of Object.entries(incoming.prompts)) {
+        if (typeof category !== 'string' || !category.trim() || !Array.isArray(prompts)) continue;
+        const target = merged[category] || (merged[category] = []);
+
+        for (const p of prompts) {
+          if (!p || typeof p !== 'object') continue;
+          if (typeof p.title !== 'string' || !p.title.trim()) continue;
+          if (typeof p.content !== 'string' || !p.content.trim()) continue;
+          if (p.id && existingIds.has(p.id)) continue;
+
+          const entry = {
+            id: p.id || generateId(),
+            title: p.title.trim(),
+            content: p.content.trim()
+          };
+          existingIds.add(entry.id);
+          target.push(entry);
+          result.addedPrompts++;
+        }
+      }
+      result.prompts = merged;
+    }
+
+    if (Array.isArray(incoming.starredPrompts)) {
+      const mergedStarred = Array.isArray(current.starredPrompts) ? [...current.starredPrompts] : [];
+      const seen = new Set(mergedStarred.map(s => s.id));
+
+      for (const s of incoming.starredPrompts) {
+        if (!s || typeof s !== 'object' || typeof s.id !== 'string' || seen.has(s.id)) continue;
+        mergedStarred.push({
+          id: s.id,
+          category: typeof s.category === 'string' ? s.category : '',
+          title: typeof s.title === 'string' ? s.title : ''
+        });
+        seen.add(s.id);
+      }
+      result.starredPrompts = mergedStarred;
+    }
+
+    if (incoming.settings && typeof incoming.settings === 'object') {
+      const allowedTypes = { showIcon: 'boolean', iconPosition: 'string', autoDetect: 'boolean', theme: 'string' };
+      const mergedSettings = { ...(current.settings || {}) };
+      for (const [key, type] of Object.entries(allowedTypes)) {
+        if (key in incoming.settings && typeof incoming.settings[key] === type) {
+          mergedSettings[key] = incoming.settings[key];
+        }
+      }
+      result.settings = mergedSettings;
+    }
+
+    if (Array.isArray(incoming.aiSites)) {
+      const mergedSites = Array.isArray(current.aiSites) ? [...current.aiSites] : [];
+      const byHostname = new Map(mergedSites.map(s => [s.hostname, s]));
+
+      for (const s of incoming.aiSites) {
+        if (!s || typeof s !== 'object' || typeof s.hostname !== 'string' || !s.hostname.trim()) continue;
+        const entry = {
+          name: (typeof s.name === 'string' && s.name.trim()) ? s.name.trim() : s.hostname.trim(),
+          hostname: s.hostname.trim(),
+          enabled: s.enabled !== false
+        };
+        const existing = byHostname.get(entry.hostname);
+        if (existing) {
+          Object.assign(existing, entry);
+        } else {
+          mergedSites.push(entry);
+          byHostname.set(entry.hostname, entry);
+          result.addedSites++;
+        }
+      }
+      result.aiSites = mergedSites;
+    }
+
+    return result;
   }
 
   // ==================== 辅助函数 ====================
@@ -2121,40 +2217,27 @@
             throw new Error('无效的数据格式');
           }
 
-          if (data.prompts && typeof data.prompts === 'object') {
-            const merged = { ...(Store.get('prompts', null) || {}) };
-            for (const [category, prompts] of Object.entries(data.prompts)) {
-              if (typeof category !== 'string' || !Array.isArray(prompts)) continue;
-              if (!merged[category]) {
-                merged[category] = [];
-              }
-              const validPrompts = prompts.filter(p =>
-                p && typeof p === 'object' &&
-                typeof p.title === 'string' && p.title.trim() &&
-                typeof p.content === 'string' && p.content.trim()
-              ).map(p => ({
-                id: p.id || generateId(),
-                title: p.title.trim(),
-                content: p.content.trim()
-              }));
-              merged[category] = merged[category].concat(validPrompts);
-            }
-            Store.set('prompts', merged);
+          // 与扩展版共用语义的合并：提示词/星标按 id 去重、站点按 hostname 合并、设置白名单
+          const merged = applyImport({
+            prompts: Store.get('prompts', null) || {},
+            settings: Store.get('settings', null) || {},
+            starredPrompts: Store.get('starredPrompts', null) || [],
+            aiSites: Store.get('aiSites', DEFAULT_AI_SITES) || []
+          }, data);
+
+          if (merged.prompts !== null) Store.set('prompts', merged.prompts);
+          if (merged.starredPrompts !== null) Store.set('starredPrompts', merged.starredPrompts);
+          if (merged.settings !== null) Store.set('settings', merged.settings);
+          if (merged.aiSites !== null) Store.set('aiSites', merged.aiSites);
+
+          if (merged.prompts === null && merged.starredPrompts === null &&
+              merged.settings === null && merged.aiSites === null) {
+            throw new Error('文件中没有可导入的数据');
           }
 
-          if (data.settings && typeof data.settings === 'object') {
-            const allowedKeys = ['showIcon', 'iconPosition', 'autoDetect', 'theme'];
-            const current = { ...DEFAULT_SETTINGS, ...(Store.get('settings', null) || {}) };
-            for (const key of allowedKeys) {
-              if (key in data.settings) {
-                current[key] = data.settings[key];
-              }
-            }
-            Store.set('settings', current);
-          }
-
-          alert('数据导入成功');
-          // 重新渲染当前面板（设置项可能已变化）
+          const extra = merged.addedSites > 0 ? `、${merged.addedSites} 个站点` : '';
+          alert(`导入成功：新增 ${merged.addedPrompts} 条提示词${extra}`);
+          // 重新渲染当前面板（数据与设置项可能已变化）
           this.open();
         } catch (error) {
           DebugLog.error('导入失败:', error);
