@@ -30,7 +30,9 @@
 
 ### 安装（油猴脚本版，推荐）
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. 点击安装：[ai-prompt-assistant.user.js](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
+2. 点击安装（国内直连）：[ai-prompt-assistant.user.js](https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js)
+   点击后 Tampermonkey 会自动弹出安装确认页，一键完成，无需下载复制；
+   若该链接打不开，可换镜像：[fastly](https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js) · [gcore](https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js) · [GitHub raw（境外）](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
 
 详见 [userscript/README.md](userscript/README.md)。
 

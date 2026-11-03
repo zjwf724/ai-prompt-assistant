@@ -7,8 +7,8 @@
 // @license      MIT
 // @homepageURL  https://github.com/zjwf724/ai-prompt-assistant
 // @supportURL   https://github.com/zjwf724/ai-prompt-assistant/issues
-// @updateURL    https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js
-// @downloadURL  https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
 // @match        https://*/*
 // @match        http://localhost/*
 // @match        http://127.0.0.1/*

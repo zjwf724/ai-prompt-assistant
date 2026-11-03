@@ -5,9 +5,21 @@ Chrome 扩展 [ai-prompt-assistant](../README.md) 的 Tampermonkey/油猴移植�
 ## 安装
 
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)（或 Violentmonkey）
-2. 点击安装链接（推送到 GitHub 后生效）：
-   **https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js**
-3. 或手动方式：新建脚本，把 `ai-prompt-assistant.user.js` 的全部内容粘贴进去保存
+2. 点击安装链接，Tampermonkey 会自动弹出安装确认页，一键完成（无需下载/复制/粘贴）：
+
+   **主链接（jsDelivr，国内直连）：**
+   https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+
+   **备用镜像（主链接打不开时依次尝试）：**
+   - https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+   - https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+   - https://testingcf.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+   - https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js （GitHub 官方，境外网络）
+
+3. 若浏览器把链接当成下载而不是弹出安装页：打开 Tampermonkey 设置 → 通用 → 将"文件访问"中的 `.user.js` 拦截开启（默认开启），再重试
+4. 或手动方式：新建脚本，把 `ai-prompt-assistant.user.js` 的全部内容粘贴进去保存
+
+> 更新地址（@updateURL/@downloadURL）同样指向 jsDelivr，国内网络下自动更新也可用；jsDelivr 对 main 分支有约 12 小时缓存，更新推送后最迟次日生效。
 
 安装后访问已启用的 AI 网站（DeepSeek、豆包、腾讯元宝等）即可看到输入框旁的绿色悬浮球。
 
@@ -19,7 +31,7 @@ Chrome 扩展 [ai-prompt-assistant](../README.md) 的 Tampermonkey/油猴移植�
 | 工具栏 popup 管理面板 | 页内设置浮层：**油猴菜单 → "AI Prompt Assistant 设置"**，或弹窗顶栏 ⚙ 齿轮 |
 | 内容脚本按启用站点动态注册 | 脚本在所有 https 页面加载，未启用站点直接退出（不注入任何 DOM） |
 | 跨标签页同步走 background 广播 | `GM_addValueChangeListener` |
-| 商店自动更新 | `@updateURL` 指向 GitHub raw（推送到 main 分支后自动更新） |
+| 商店自动更新 | `@updateURL/@downloadURL` 指向 jsDelivr CDN（国内可达，推送 main 后自动更新，约 12h 缓存延迟） |
 
 其余功能一致：光标跟随（加载后停靠输入框首行）、分类/星标/搜索、添加/编辑/删除、站点自定义管理、JSON 导入导出、暗色模式。
 
