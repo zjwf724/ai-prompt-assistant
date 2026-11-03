@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>inserter-test</title>
+<style>
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; padding: 20px; }
+  textarea, #ce {
+    font-size: 16px; padding: 6px 10px; border: 2px solid #999;
+    box-sizing: border-box; width: 320px; display: block; margin: 10px 0;
+  }
+  #ce { min-height: 40px; }
+</style>
+</head>
+<body>
+  <textarea id="ta"></textarea>
+  <textarea id="ta-controlled"></textarea>
+  <div id="ce" contenteditable="true"></div>
+  <div id="results">running...</div>
+
+  <script src="../constants.js"></script>
+  <script src="../modules/promptInserter.js"></script>
+  <script>
+    (function () {
+      const out = [];
+      let pass = 0, fail = 0;
+      function assert(name, cond, detail) {
+        cond ? pass++ : fail++;
+        out.push((cond ? 'PASS' : 'FAIL') + ' | ' + name + (detail ? ' | ' + detail : ''));
+      }
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+      async function run() {
+        // ---------- T1: 普通 textarea 插入 ----------
+        const ta = document.getElementById('ta');
+        ta.focus();
+        PromptInserter.insert(ta, '你好世界');
+        await sleep(100);
+        assert('T1 普通 textarea 插入', ta.value === '你好世界', 'value="' + ta.value + '"');
+
+        // ---------- T2: 受控组件 textarea（模拟 React） ----------
+        // React 在实例上劫持 value：直接 el.value = x 会被忽略（走实例 setter），
+        // 只有原型 setter 能写入真实值；框架监听 input 事件，通过事件读取 DOM
+        // 真实值并写入自身状态，重渲染时用状态回写。
+        const taC = document.getElementById('ta-controlled');
+        const protoDesc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+        let frameworkState = '';
+        Object.defineProperty(taC, 'value', {
+          get() { return frameworkState; },          // 框架渲染时以内部状态为准
+          set(v) { /* 受控组件忽略外部直接赋值 */ }
+        });
+        taC.addEventListener('input', () => {
+          frameworkState = protoDesc.get.call(taC);   // 框架从事件同步真实 DOM 值
+        });
+
+        taC.focus();
+        PromptInserter.insert(taC, '受控内容');
+        await sleep(100);
+
+        // 模拟"点击页面空白 → 失焦 → 框架用内部状态重渲染回写 DOM"
+        taC.blur();
+        protoDesc.set.call(taC, frameworkState);
+        await sleep(50);
+        assert('T2 受控组件：失焦重渲染后内容保留', taC.value === '受控内容',
+          'value="' + taC.value + '"（旧实现此处为空，即用户反馈的消失 bug）');
+
+        // ---------- T3: 受控组件二次插入（状态累积正确） ----------
+        taC.focus();
+        PromptInserter.insert(taC, '追加');
+        await sleep(100);
+        taC.blur();
+        protoDesc.set.call(taC, frameworkState);
+        await sleep(50);
+        assert('T3 受控组件二次插入', taC.value === '受控内容追加', 'value="' + taC.value + '"');
+
+        // ---------- T4: contenteditable 走 execCommand 插入 ----------
+        const ce = document.getElementById('ce');
+        ce.focus();
+        PromptInserter.insert(ce, '富文本内容');
+        await sleep(100);
+        assert('T4 contenteditable 插入', ce.textContent.includes('富文本内容'),
+          'text="' + ce.textContent + '"');
+
+        // 光标应位于插入内容之后
+        const sel = window.getSelection();
+        const caretInside = sel.rangeCount > 0 && ce.contains(sel.anchorNode);
+        assert('T5 插入后光标在编辑区内', caretInside);
+
+        out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
+        document.getElementById('results').textContent = out.join('\n');
+        document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+      }
+
+      run().catch(e => {
+        out.unshift('==== 异常: ' + e.message + ' ====');
+        document.getElementById('results').textContent = out.join('\n');
+        document.title = 'HAS_FAIL';
+      });
+    })();
+  </script>
+</body>
+</html>

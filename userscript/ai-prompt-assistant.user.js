@@ -109,7 +109,6 @@
     SPA_ROUTE: 1000,
     TOAST_SHOW: 2000,
     TOAST_FADE: 300,
-    CURSOR_CHECK: [0, 50],
     POPUP_CLOSE_DELAY: 100,
     ICON_REPOSITION_DELAY: 10
   };
@@ -1862,7 +1861,7 @@
 
           if (tagName === 'textarea' || tagName === 'input') {
             this.insertIntoTextArea(inputElement, content);
-          } else if (inputElement.getAttribute('contenteditable') === 'true') {
+          } else if (inputElement.isContentEditable) {
             this.insertIntoContentEditable(inputElement, content);
           }
 
@@ -1874,33 +1873,76 @@
       }, 10);
     }
 
+    /**
+     * 取原生 value setter（受控组件会在实例上劫持 value 属性，原型 setter 不受影响）
+     */
+    static getNativeValueSetter(inputElement) {
+      const proto = inputElement.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      return Object.getOwnPropertyDescriptor(proto, 'value')?.set || null;
+    }
+
     static insertIntoTextArea(inputElement, content) {
-      const start = inputElement.selectionStart || 0;
-      const end = inputElement.selectionEnd || 0;
+      const start = inputElement.selectionStart ?? inputElement.value.length;
+      const end = inputElement.selectionEnd ?? start;
       const value = inputElement.value || '';
 
       const newValue = value.substring(0, start) + content + value.substring(end);
-      inputElement.value = newValue;
+
+      // React/Vue 等受控组件会在失焦/重渲染时用内部状态覆盖直接赋值
+      // （表现为点击页面空白后内容消失），必须走原生 setter + input 事件
+      const nativeSetter = this.getNativeValueSetter(inputElement);
+      if (nativeSetter) {
+        nativeSetter.call(inputElement, newValue);
+      } else {
+        inputElement.value = newValue;
+      }
 
       const newCursorPos = start + content.length;
       inputElement.setSelectionRange(newCursorPos, newCursorPos);
       inputElement.scrollTop = inputElement.scrollHeight;
 
-      inputElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+      inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+      inputElement.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     static insertIntoContentEditable(inputElement, content) {
-      let selection = window.getSelection();
+      // 富文本编辑器（Lexical/ProseMirror 等）自管 DOM，手工插文本节点
+      // 不进编辑器状态；execCommand 走浏览器编辑管线，编辑器能正常捕获
+      let inserted = false;
+      try {
+        inputElement.focus();
+        this.ensureCaretInside(inputElement);
+        inserted = document.execCommand('insertText', false, content);
+      } catch (e) {
+        inserted = false;
+      }
+
+      if (!inserted) {
+        this.insertViaRange(inputElement, content);
+      }
+    }
+
+    static ensureCaretInside(inputElement) {
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0 && inputElement.contains(selection.anchorNode)) {
+        return;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(inputElement);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    static insertViaRange(inputElement, content) {
+      const selection = window.getSelection();
       let range;
 
-      if (selection.rangeCount > 0) {
+      if (selection.rangeCount > 0 &&
+          inputElement.contains(selection.getRangeAt(0).commonAncestorContainer)) {
         range = selection.getRangeAt(0);
-        if (!inputElement.contains(range.commonAncestorContainer)) {
-          range = document.createRange();
-          range.selectNodeContents(inputElement);
-          range.collapse(false);
-        }
       } else {
         range = document.createRange();
         range.selectNodeContents(inputElement);
@@ -1918,24 +1960,8 @@
       selection.addRange(range);
 
       inputElement.focus();
-
-      inputElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-
-      // 简化的光标监控（仅2次检查）
-      DELAY.CURSOR_CHECK.forEach(delay => {
-        setTimeout(() => {
-          try {
-            const sel = window.getSelection();
-            const r = document.createRange();
-            r.setStartAfter(textNode);
-            r.setEndAfter(textNode);
-            sel.removeAllRanges();
-            sel.addRange(r);
-            inputElement.focus();
-          } catch (e) {}
-        }, delay);
-      });
+      inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+      inputElement.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     static fallbackInsert(inputElement, content) {
@@ -1944,16 +1970,26 @@
 
         if (tagName === 'textarea' || tagName === 'input') {
           const oldValue = inputElement.value || '';
-          inputElement.value = oldValue + content;
-          const newPos = oldValue.length + content.length;
+          const newValue = oldValue + content;
+          const nativeSetter = this.getNativeValueSetter(inputElement);
+          if (nativeSetter) {
+            nativeSetter.call(inputElement, newValue);
+          } else {
+            inputElement.value = newValue;
+          }
+          const newPos = newValue.length;
           inputElement.setSelectionRange(newPos, newPos);
           inputElement.scrollTop = inputElement.scrollHeight;
-        } else if (inputElement.getAttribute('contenteditable') === 'true') {
-          inputElement.textContent += content;
+          inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        } else if (inputElement.isContentEditable) {
+          inputElement.focus();
+          this.ensureCaretInside(inputElement);
+          if (!document.execCommand('insertText', false, content)) {
+            inputElement.textContent += content;
+          }
         }
 
         inputElement.focus();
-        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
         DebugLog.log('降级方案成功');
       } catch (fallbackError) {
         DebugLog.error('降级方案也失败:', fallbackError);
