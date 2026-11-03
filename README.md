@@ -30,9 +30,9 @@
 
 ### 安装（油猴脚本版，推荐）
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. 点击安装（国内直连）：[ai-prompt-assistant.user.js](https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js)
-   点击后 Tampermonkey 会自动弹出安装确认页，一键完成，无需下载复制；
-   若该链接打不开，可换镜像：[fastly](https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js) · [gcore](https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js) · [GitHub raw（境外）](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
+2. 点击安装（版本锁定链接，不受 CDN 缓存影响）：[ai-prompt-assistant.user.js v1.4.1](https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js)
+   点击后 Tampermonkey 会自动弹出安装确认页，一键完成；安装后自动更新走 `@main` 分支地址；
+   备用：[fastly 镜像](https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js) · [gcore 镜像](https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js) · [GitHub raw（境外）](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
 
 详见 [userscript/README.md](userscript/README.md)。
 

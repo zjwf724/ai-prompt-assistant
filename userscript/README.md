@@ -7,19 +7,19 @@ Chrome 扩展 [ai-prompt-assistant](../README.md) 的 Tampermonkey/油猴移植�
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)（或 Violentmonkey）
 2. 点击安装链接，Tampermonkey 会自动弹出安装确认页，一键完成（无需下载/复制/粘贴）：
 
-   **主链接（jsDelivr，国内直连）：**
-   https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+   **推荐：版本锁定链接（git 标签地址，内容不可变，不受 CDN 缓存影响）**
+   https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
 
-   **备用镜像（主链接打不开时依次尝试）：**
-   - https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
-   - https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
-   - https://testingcf.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js
+   **备用（依次尝试）：**
+   - https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
+   - https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
+   - https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js （@main 分支，个别节点可能有缓存延迟）
    - https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js （GitHub 官方，境外网络）
 
 3. 若浏览器把链接当成下载而不是弹出安装页：打开 Tampermonkey 设置 → 通用 → 将"文件访问"中的 `.user.js` 拦截开启（默认开启），再重试
 4. 或手动方式：新建脚本，把 `ai-prompt-assistant.user.js` 的全部内容粘贴进去保存
 
-> 更新地址（@updateURL/@downloadURL）同样指向 jsDelivr，国内网络下自动更新也可用；jsDelivr 对 main 分支有约 12 小时缓存，更新推送后最迟次日生效。
+> **更新机制**：安装后 Tampermonkey 通过脚本头部的 `@updateURL`（指向 `@main` 分支）自动检查更新；每次发布都会升级版本号并打 git 标签，版本号可保证不会被 CDN 旧缓存"降级"。若手动重装，优先用上面的版本锁定链接。
 
 安装后访问已启用的 AI 网站（DeepSeek、豆包、腾讯元宝等）即可看到输入框旁的绿色悬浮球。
 
