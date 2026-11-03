@@ -179,6 +179,16 @@ class PopupManager {
                 <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/>
               </svg>
             </button>
+            <button class="mode-toggle-btn" id="export-btn" title="导出备份">
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v7.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 10.586V3a1 1 0 011-1zM3 16a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/>
+              </svg>
+            </button>
+            <button class="mode-toggle-btn" id="import-btn" title="导入备份">
+              <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 14a1 1 0 01-.707-.293l-4-4a1 1 0 011.414-1.414L9 10.586V3a1 1 0 112 0v7.586l2.293-2.293a1 1 0 111.414 1.414l-4 4A1 1 0 0110 14zM3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/>
+              </svg>
+            </button>
             <button class="close-btn">×</button>
           </div>
         </div>
@@ -445,6 +455,50 @@ class PopupManager {
         this.dialogManager.showToast('提示词已保存');
         await this.refresh();
       }, currentFilter === 'all' ? null : currentFilter);
+    });
+
+    // 导出备份（提示词 + 星标 + 设置 + 站点）
+    shadowRoot.getElementById('export-btn').addEventListener('click', async () => {
+      try {
+        const data = await this.dataManager.exportAll();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ai-prompts-backup-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.dialogManager.showToast('备份已导出');
+      } catch (e) {
+        this.dialogManager.showToast('导出失败，请重试');
+      }
+    });
+
+    // 导入备份
+    shadowRoot.getElementById('import-btn').addEventListener('click', () => {
+      let input = shadowRoot.getElementById('import-file-input');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'import-file-input';
+        input.accept = '.json';
+        input.style.display = 'none';
+        shadowRoot.appendChild(input);
+      }
+      input.value = '';
+      input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+          const result = await this.dataManager.importData(JSON.parse(await file.text()));
+          const extra = result.addedSites > 0 ? `、${result.addedSites} 个站点` : '';
+          this.dialogManager.showToast(`导入成功：新增 ${result.addedPrompts} 条提示词${extra}`);
+          await this.refresh();
+        } catch (e) {
+          this.dialogManager.showToast('导入失败：' + (e && e.message ? e.message : '文件格式错误'));
+        }
+      };
+      input.click();
     });
 
     // 点击外部关闭

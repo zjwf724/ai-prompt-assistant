@@ -70,6 +70,58 @@ class DataManager {
   }
 
   /**
+   * 获取站点配置（导出备份时需要）
+   */
+  async getAiSites() {
+    const sites = await chrome.runtime.sendMessage({ type: MSG.GET_AI_SITES });
+    return sites || [];
+  }
+
+  /**
+   * 构建完整备份（提示词 + 星标 + 设置 + 站点）
+   */
+  async exportAll() {
+    return buildExport({
+      prompts: this.prompts,
+      settings: this.settings,
+      starredPrompts: this.starredPrompts,
+      aiSites: await this.getAiSites()
+    });
+  }
+
+  /**
+   * 导入备份：校验合并后经后台写入，返回新增统计
+   * @param {Object} raw - JSON 解析后的备份对象
+   * @returns {Promise<{addedPrompts: number, addedSites: number}>}
+   */
+  async importData(raw) {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error('无效的数据格式');
+    }
+
+    const merged = applyImport({
+      prompts: this.prompts,
+      settings: this.settings,
+      starredPrompts: this.starredPrompts,
+      aiSites: await this.getAiSites()
+    }, raw);
+
+    const payload = {};
+    if (merged.prompts !== null) payload.prompts = merged.prompts;
+    if (merged.starredPrompts !== null) payload.starredPrompts = merged.starredPrompts;
+    if (merged.settings !== null) payload.settings = merged.settings;
+    if (merged.aiSites !== null) payload.aiSites = merged.aiSites;
+
+    if (Object.keys(payload).length === 0) {
+      throw new Error('文件中没有可导入的数据');
+    }
+
+    await chrome.runtime.sendMessage({ type: MSG.IMPORT_DATA, data: payload });
+    await this.loadAll();
+    return { addedPrompts: merged.addedPrompts, addedSites: merged.addedSites };
+  }
+
+  /**
    * 保存提示词
    */
   async savePrompt(category, prompt) {

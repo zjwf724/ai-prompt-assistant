@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>import-export-test</title>
+<style>
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="results">running...</div>
+
+<script>
+  // ==== chrome.runtime mock：模拟 background 的消息处理 ====
+  const store = {
+    prompts: {
+      '写作助手': [{ id: 'p_exist_1', title: '润色文本', content: '请润色' }]
+    },
+    settings: { showIcon: true, iconPosition: 'right' },
+    starredPrompts: [{ id: 'p_exist_1', category: '写作助手', title: '润色文本' }],
+    aiSites: [
+      { name: '豆包', hostname: '.doubao.com', enabled: false }
+    ]
+  };
+
+  window.chrome = {
+    runtime: {
+      sendMessage(msg) {
+        const clone = v => JSON.parse(JSON.stringify(v));
+        switch (msg.type) {
+          case 'GET_PROMPTS': return Promise.resolve(clone(store.prompts));
+          case 'GET_SETTINGS': return Promise.resolve(clone(store.settings));
+          case 'GET_STARRED_PROMPTS': return Promise.resolve(clone(store.starredPrompts));
+          case 'GET_AI_SITES': return Promise.resolve(clone(store.aiSites));
+          case 'SAVE_STARRED_PROMPTS': store.starredPrompts = clone(msg.starredPrompts); return Promise.resolve({ success: true });
+          case 'IMPORT_DATA': {
+            const d = msg.data || {};
+            if (d.prompts !== undefined) store.prompts = d.prompts;
+            if (d.starredPrompts !== undefined) store.starredPrompts = d.starredPrompts;
+            if (d.settings !== undefined) store.settings = Object.assign({}, store.settings, d.settings);
+            if (d.aiSites !== undefined) store.aiSites = d.aiSites;
+            return Promise.resolve({ success: true });
+          }
+          default: return Promise.resolve(null);
+        }
+      }
+    }
+  };
+</script>
+<script src="../constants.js"></script>
+<script src="../modules/dataManager.js"></script>
+<script>
+  (function () {
+    const out = [];
+    let pass = 0, fail = 0;
+    function assert(name, cond, detail) {
+      cond ? pass++ : fail++;
+      out.push((cond ? 'PASS' : 'FAIL') + ' | ' + name + (detail ? ' | ' + detail : ''));
+    }
+
+    // ---------- T1: applyImport 提示词合并（校验 + id 去重） ----------
+    const current = {
+      prompts: { '写作助手': [{ id: 'p1', title: 'a', content: 'a' }] },
+      settings: { showIcon: true },
+      starredPrompts: [{ id: 'p1', category: '写作助手', title: 'a' }],
+      aiSites: [{ name: 'X', hostname: 'x.com', enabled: true }]
+    };
+    const incoming = {
+      prompts: {
+        '写作助手': [
+          { id: 'p1', title: '重复项应跳过', content: 'x' },          // id 已存在 → 跳过
+          { title: '无id新项', content: '新增' },                      // 无 id → 新增
+          { id: 'p9', title: '', content: '空标题应跳过' },            // 无效 → 跳过
+          '字符串项应跳过'
+        ],
+        '新分类': [{ id: 'p2', title: 'ok', content: 'ok' }]
+      }
+    };
+    const r1 = applyImport(current, incoming);
+    assert('T1a 新增 2 条（去重+过滤）', r1.addedPrompts === 2, 'added=' + r1.addedPrompts);
+    assert('T1b 原分类合并后 2 条', r1.prompts['写作助手'].length === 2);
+    assert('T1c 新分类创建', r1.prompts['新分类'].length === 1);
+    assert('T1d 新项生成 id', !!r1.prompts['写作助手'][1].id);
+
+    // ---------- T2: 星标合并去重 ----------
+    const r2 = applyImport({ starredPrompts: [{ id: 's1', category: 'a', title: 'a' }] },
+      { starredPrompts: [{ id: 's1', title: 'dup' }, { id: 's2', title: 'new' }, 'bad', { title: '无id跳过' }] });
+    assert('T2 星标合并后 2 条', r2.starredPrompts.length === 2, JSON.stringify(r2.starredPrompts.map(s => s.id)));
+
+    // ---------- T3: 设置白名单 + 类型校验 ----------
+    const r3 = applyImport({ settings: { showIcon: true, theme: 'auto' } },
+      { settings: { showIcon: 'evil-string', iconPosition: 'left', hack: 'x' } });
+    assert('T3a 非法类型被拒', r3.settings.showIcon === true);
+    assert('T3b 合法键生效', r3.settings.iconPosition === 'left');
+    assert('T3c 白名单外键被忽略', !('hack' in r3.settings));
+
+    // ---------- T4: 站点按 hostname 合并 ----------
+    const r4 = applyImport({ aiSites: [{ name: '豆包', hostname: '.doubao.com', enabled: false }] },
+      { aiSites: [
+        { name: '豆包新名', hostname: '.doubao.com', enabled: true },   // 已有 → 覆盖
+        { hostname: 'z.ai' },                                            // 新增（name 缺省用域名）
+        { name: '坏', hostname: '' },                                    // 无效 → 跳过
+        'bad'
+      ] });
+    assert('T4a 新增 1 个站点', r4.addedSites === 1);
+    assert('T4b 同名站点被覆盖', r4.aiSites[0].name === '豆包新名' && r4.aiSites[0].enabled === true);
+    assert('T4c 缺省 name 用域名', r4.aiSites[1].name === 'z.ai' && r4.aiSites[1].enabled === true);
+
+    // ---------- T5: DataManager 完整导入流（幂等） ----------
+    (async () => {
+      const dm = new DataManager();
+      await dm.loadAll();
+
+      const backup = {
+        prompts: { '写作助手': [{ id: 'p_import_1', title: '导入项', content: '内容' }] },
+        starredPrompts: [{ id: 'p_import_1', category: '写作助手', title: '导入项' }],
+        settings: { iconPosition: 'left' },
+        aiSites: [{ name: 'ZAI', hostname: '.z.ai', enabled: true }]
+      };
+
+      const first = await dm.importData(backup);
+      assert('T5a 首次导入新增 1 条', first.addedPrompts === 1, 'added=' + first.addedPrompts);
+      assert('T5b 存储已写入提示词', store.prompts['写作助手'].some(p => p.id === 'p_import_1'));
+      assert('T5c 存储已写入星标', store.starredPrompts.some(s => s.id === 'p_import_1'));
+      assert('T5d 存储已写入站点', store.aiSites.some(s => s.hostname === '.z.ai'));
+      assert('T5e 设置已合并', store.settings.iconPosition === 'left' && store.settings.showIcon === true);
+
+      const second = await dm.importData(backup);
+      assert('T5f 重复导入幂等（0 新增）', second.addedPrompts === 0 && second.addedSites === 0,
+        'added=' + second.addedPrompts + '/' + second.addedSites);
+
+      // ---------- T6: exportAll 完整性 ----------
+      const dump = await dm.exportAll();
+      assert('T6a 备份含全部分区', ['prompts', 'starredPrompts', 'settings', 'aiSites', 'exportDate', 'version']
+        .every(k => k in dump));
+      assert('T6b 备份版本正确', dump.version === EXT_VERSION);
+
+      // ---------- T7: 无效输入报错 ----------
+      let threw = false;
+      try { await dm.importData({ foo: 1 }); } catch (e) { threw = true; }
+      assert('T7a 无可导入数据抛错', threw);
+      threw = false;
+      try { await dm.importData(null); } catch (e) { threw = true; }
+      assert('T7b null 输入抛错', threw);
+
+      out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
+      document.getElementById('results').textContent = out.join('\n');
+      document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+    })().catch(e => {
+      out.unshift('==== 异常: ' + e.message + ' ====');
+      document.getElementById('results').textContent = out.join('\n');
+      document.title = 'HAS_FAIL';
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # AI Prompt Assistant
 
-![Version](https://img.shields.io/badge/version-1.3.0-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.4.0-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 一个 Chrome 扩展（Manifest V3）：在 AI 聊天网站的输入框旁显示悬浮球，一键插入你预设的常用提示词。支持分类管理、星标收藏、搜索过滤、多站点自定义，数据完全保存在本地。
 
@@ -13,7 +13,7 @@
 - **提示词管理**：分类存储、添加、编辑、删除、星标收藏、搜索过滤；编辑保留 id，星标不丢失
 - **站点自定义**：默认支持 DeepSeek、豆包、腾讯元宝；可启用/禁用、删除、添加任意自定义网站（常见平台自动转换为子域名匹配）
 - **智能注入**：内容脚本只在启用的网站上动态注册运行，不向其他网站注入任何代码
-- **数据本地化**：使用 `chrome.storage.local`，无任何网络请求；支持 JSON 导入/导出备份
+- **数据本地化**：使用 `chrome.storage.local`，无任何网络请求；提示词面板顶栏与扩展弹窗均可导入/导出 JSON 备份（含星标与站点配置，重复导入自动去重）
 - **暗色模式**：自动跟随系统主题
 
 ## 📦 默认支持的网站
@@ -118,6 +118,11 @@ python -m http.server 8642
 - 某些站点输入框在 iframe 内时无法识别（内容脚本默认只注入顶层框架）
 
 ## 📈 更新日志
+
+### v1.4.0 - 2026-11-03
+- ✨ 新增：提示词面板顶栏导入/导出备份按钮（无需打开扩展弹窗即可备份恢复）
+- ✨ 备份格式升级：包含星标与站点配置（此前导出会丢失星标数据）；导入按提示词 id / 星标 id / 站点 hostname 去重合并，重复导入幂等
+- 🔒 导入校验加固：设置项白名单 + 类型检查，站点/提示词逐条验证；popup 与内容脚本共用同一套合并逻辑
 
 ### v1.3.0 - 2026-11-03
 - ✨ 新增：悬浮球跟随输入光标垂直位置——页面加载后即对齐输入框首行（无需先聚焦），聚焦后对齐光标所在行；打字换行、点击移动光标、方向键、输入框/页面滚动时自动更新（textarea 通过镜像元素测量，兼容自动换行；contenteditable 直接读取选区坐标）

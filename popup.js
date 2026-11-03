@@ -35,10 +35,11 @@ class PopupSettingsManager {
   // 加载数据
   async loadData() {
     try {
-      const result = await chrome.storage.local.get(['prompts', 'settings', 'aiSites']);
+      const result = await chrome.storage.local.get(['prompts', 'settings', 'aiSites', 'starredPrompts']);
       this.prompts = result.prompts || {};
       this.settings = result.settings || { showIcon: true, iconPosition: 'right', autoDetect: true };
       this.aiSites = result.aiSites || [];
+      this.starredPrompts = result.starredPrompts || [];
     } catch (error) {
       console.error('加载数据失败:', error);
     }
@@ -725,13 +726,12 @@ class PopupSettingsManager {
   }
 
   exportData() {
-    const data = {
+    const data = buildExport({
       prompts: this.prompts,
       settings: this.settings,
-      aiSites: this.aiSites,
-      exportDate: new Date().toISOString(),
-      version: EXT_VERSION
-    };
+      starredPrompts: this.starredPrompts,
+      aiSites: this.aiSites
+    });
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -756,47 +756,34 @@ class PopupSettingsManager {
           throw new Error('无效的数据格式');
         }
 
-        if (data.prompts && typeof data.prompts === 'object') {
-          const merged = { ...this.prompts };
-          for (const [category, prompts] of Object.entries(data.prompts)) {
-            if (typeof category !== 'string' || !Array.isArray(prompts)) continue;
-            if (!merged[category]) {
-              merged[category] = [];
-            }
-            const validPrompts = prompts.filter(p =>
-              p && typeof p === 'object' &&
-              typeof p.title === 'string' && p.title.trim() &&
-              typeof p.content === 'string' && p.content.trim()
-            ).map(p => ({
-              id: p.id || generateId(),
-              title: p.title.trim(),
-              content: p.content.trim()
-            }));
-            merged[category] = merged[category].concat(validPrompts);
-          }
-          await chrome.storage.local.set({ prompts: merged });
-          this.prompts = merged;
-          await this.notifyDataUpdate();
+        // 与内容脚本共用的合并逻辑（校验、按 id/hostname 去重、设置白名单）
+        const merged = applyImport({
+          prompts: this.prompts,
+          settings: this.settings,
+          starredPrompts: this.starredPrompts,
+          aiSites: this.aiSites
+        }, data);
+
+        const payload = {};
+        if (merged.prompts !== null) payload.prompts = merged.prompts;
+        if (merged.starredPrompts !== null) payload.starredPrompts = merged.starredPrompts;
+        if (merged.settings !== null) payload.settings = merged.settings;
+        if (merged.aiSites !== null) payload.aiSites = merged.aiSites;
+
+        if (Object.keys(payload).length === 0) {
+          throw new Error('文件中没有可导入的数据');
         }
 
-        if (data.settings && typeof data.settings === 'object') {
-          const allowedKeys = ['showIcon', 'iconPosition', 'autoDetect', 'theme'];
-          const filteredSettings = {};
-          for (const key of allowedKeys) {
-            if (key in data.settings) {
-              filteredSettings[key] = data.settings[key];
-            }
-          }
-          const mergedSettings = { ...this.settings, ...filteredSettings };
-          await chrome.storage.local.set({ settings: mergedSettings });
-          this.settings = mergedSettings;
-        }
+        // 统一走后台写入：自动广播各标签页并同步站点注入注册
+        await chrome.runtime.sendMessage({ type: MSG.IMPORT_DATA, data: payload });
 
         await this.loadData();
         this.renderStats();
         this.renderSettings();
+        this.renderSitesList();
         this.renderPromptsList();
-        this.showToast('数据导入成功');
+        const extra = merged.addedSites > 0 ? `、${merged.addedSites} 个站点` : '';
+        this.showToast(`导入成功：新增 ${merged.addedPrompts} 条提示词${extra}`);
       } catch (error) {
         console.error('导入失败:', error);
         this.showToast('导入失败：' + error.message);

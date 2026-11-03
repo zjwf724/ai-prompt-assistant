@@ -270,6 +270,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === MSG.IMPORT_DATA) {
+    // 调用方（popup/内容脚本）已完成校验与合并，后台按分区覆盖写入
+    const d = message.data || {};
+    chrome.storage.local.get(['settings'], (result) => {
+      const update = {};
+      if (d.prompts !== undefined) update.prompts = d.prompts;
+      if (d.starredPrompts !== undefined) update.starredPrompts = d.starredPrompts;
+      if (d.settings !== undefined) update.settings = { ...(result.settings || DEFAULT_SETTINGS), ...d.settings };
+      if (d.aiSites !== undefined) update.aiSites = d.aiSites;
+
+      chrome.storage.local.set(update, async () => {
+        sendResponse({ success: true });
+        if (update.prompts !== undefined || update.starredPrompts !== undefined) {
+          await broadcastToTabs(MSG.PROMPTS_DATA_UPDATED);
+        }
+        if (update.settings !== undefined) {
+          await broadcastToTabs(MSG.SETTINGS_UPDATED);
+        }
+        if (update.aiSites !== undefined) {
+          await syncContentScriptRegistration();
+          await broadcastToTabs(MSG.SITES_CONFIG_UPDATED, { sites: update.aiSites });
+        }
+      });
+    });
+    return true;
+  }
+
   if (message.type === MSG.GET_STARRED_PROMPTS) {
     chrome.storage.local.get(['starredPrompts'], (result) => {
       sendResponse(result.starredPrompts || []);

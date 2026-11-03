@@ -16,6 +16,7 @@ const MESSAGE_TYPES = {
   GET_ENABLED_SITES: 'GET_ENABLED_SITES',
   GET_STARRED_PROMPTS: 'GET_STARRED_PROMPTS',
   SAVE_STARRED_PROMPTS: 'SAVE_STARRED_PROMPTS',
+  IMPORT_DATA: 'IMPORT_DATA',
 
   // 广播消息
   PROMPTS_DATA_UPDATED: 'PROMPTS_DATA_UPDATED',
@@ -93,7 +94,7 @@ const LAYOUT = {
 };
 
 // ==================== 版本号 ====================
-const EXT_VERSION = '1.3.0';
+const EXT_VERSION = '1.4.0';
 
 // ==================== 默认数据 ====================
 const DEFAULT_PROMPTS = {
@@ -213,6 +214,119 @@ const SITE_SELECTORS = {
     '[contenteditable]'
   ]
 };
+
+/**
+ * 构建完整备份（导出格式 v2：含星标与站点配置）
+ * @param {Object} current - { prompts, settings, starredPrompts, aiSites }
+ * @returns {Object}
+ */
+function buildExport(current) {
+  return {
+    prompts: current.prompts || {},
+    starredPrompts: current.starredPrompts || [],
+    settings: current.settings || {},
+    aiSites: current.aiSites || [],
+    exportDate: new Date().toISOString(),
+    version: EXT_VERSION
+  };
+}
+
+/**
+ * 合并导入的备份数据（popup 与内容脚本共用）
+ * - prompts：逐条校验（title/content 必须为非空字符串），按 id 去重（重复导入幂等）
+ * - starredPrompts：按 id 去重合并
+ * - settings：白名单键 + 类型校验
+ * - aiSites：按 hostname 合并（已有则覆盖属性，没有则追加）
+ * @param {Object} current - 现有数据 { prompts, settings, starredPrompts, aiSites }
+ * @param {Object} incoming - 导入文件解析出的对象
+ * @returns {Object} { prompts, starredPrompts, settings, aiSites, addedPrompts, addedSites }
+ *                   未导入的分区为 null
+ */
+function applyImport(current, incoming) {
+  const result = { prompts: null, starredPrompts: null, settings: null, aiSites: null, addedPrompts: 0, addedSites: 0 };
+
+  if (incoming.prompts && typeof incoming.prompts === 'object') {
+    const merged = { ...(current.prompts || {}) };
+    const existingIds = new Set();
+    Object.values(current.prompts || {}).forEach(arr =>
+      (arr || []).forEach(p => p.id && existingIds.add(p.id))
+    );
+
+    for (const [category, prompts] of Object.entries(incoming.prompts)) {
+      if (typeof category !== 'string' || !category.trim() || !Array.isArray(prompts)) continue;
+      const target = merged[category] || (merged[category] = []);
+
+      for (const p of prompts) {
+        if (!p || typeof p !== 'object') continue;
+        if (typeof p.title !== 'string' || !p.title.trim()) continue;
+        if (typeof p.content !== 'string' || !p.content.trim()) continue;
+        if (p.id && existingIds.has(p.id)) continue;
+
+        const entry = {
+          id: p.id || generateId(),
+          title: p.title.trim(),
+          content: p.content.trim()
+        };
+        existingIds.add(entry.id);
+        target.push(entry);
+        result.addedPrompts++;
+      }
+    }
+    result.prompts = merged;
+  }
+
+  if (Array.isArray(incoming.starredPrompts)) {
+    const mergedStarred = Array.isArray(current.starredPrompts) ? [...current.starredPrompts] : [];
+    const seen = new Set(mergedStarred.map(s => s.id));
+
+    for (const s of incoming.starredPrompts) {
+      if (!s || typeof s !== 'object' || typeof s.id !== 'string' || seen.has(s.id)) continue;
+      mergedStarred.push({
+        id: s.id,
+        category: typeof s.category === 'string' ? s.category : '',
+        title: typeof s.title === 'string' ? s.title : ''
+      });
+      seen.add(s.id);
+    }
+    result.starredPrompts = mergedStarred;
+  }
+
+  if (incoming.settings && typeof incoming.settings === 'object') {
+    const allowedTypes = { showIcon: 'boolean', iconPosition: 'string', autoDetect: 'boolean', theme: 'string' };
+    const mergedSettings = { ...(current.settings || {}) };
+    for (const [key, type] of Object.entries(allowedTypes)) {
+      if (key in incoming.settings && typeof incoming.settings[key] === type) {
+        mergedSettings[key] = incoming.settings[key];
+      }
+    }
+    result.settings = mergedSettings;
+  }
+
+  if (Array.isArray(incoming.aiSites)) {
+    const mergedSites = Array.isArray(current.aiSites) ? [...current.aiSites] : [];
+    const byHostname = new Map(mergedSites.map(s => [s.hostname, s]));
+
+    for (const s of incoming.aiSites) {
+      if (!s || typeof s !== 'object' || typeof s.hostname !== 'string' || !s.hostname.trim()) continue;
+      const entry = {
+        name: (typeof s.name === 'string' && s.name.trim()) ? s.name.trim() : s.hostname.trim(),
+        hostname: s.hostname.trim(),
+        enabled: s.enabled !== false
+      };
+      const existing = byHostname.get(entry.hostname);
+      if (existing) {
+        Object.assign(existing, entry);
+      } else {
+        mergedSites.push(entry);
+        byHostname.set(entry.hostname, entry);
+        result.addedSites++;
+      }
+    }
+    result.aiSites = mergedSites;
+  }
+
+  return result;
+}
 
 // ==================== ID 生成 ====================
 
