@@ -1,202 +1,267 @@
 // 后台服务工作者
-// 处理数据存储和插件生命周期管理
+// 处理数据存储、内容脚本动态注册与插件生命周期管理
 
-// 默认提示词分类
-const DEFAULT_PROMPTS = {
-  "角色扮演": [
-    {
-      title: "专业翻译",
-      content: "请扮演一位专业的翻译家，将以下内容翻译成中文，保持原文的专业性和准确性："
-    },
-    {
-      title: "代码助手",
-      content: "请作为一位经验丰富的程序员，帮我分析以下代码并提供优化建议："
-    }
-  ],
-  "写作助手": [
-    {
-      title: "润色文本",
-      content: "请帮我润色以下文本，使其更加流畅和专业："
-    },
-    {
-      title: "总结要点",
-      content: "请总结以下内容的核心要点，使用条目式列出："
-    }
-  ],
-  "学习辅助": [
-    {
-      title: "解释概念",
-      content: "请用通俗易懂的语言解释以下概念："
-    },
-    {
-      title: "制定计划",
-      content: "请帮我制定一个详细的学习计划，针对以下主题："
-    }
-  ]
-};
+// 导入 constants.js（Service Worker 需要显式导入）
+importScripts('constants.js');
 
-// 默认支持的AI网站配置
-const DEFAULT_AI_SITES = [
-  { name: "DeepSeek", hostname: "chat.deepseek.com", enabled: true },
-  { name: "豆包", hostname: ".doubao.com", enabled: true },  // 使用 .doubao.com 匹配所有子域名
-  { name: "腾讯元宝", hostname: "yuanbao.tencent.com", enabled: true },
-  { name: "zAI", hostname: ".z.ai", enabled: true }  // 使用 .z.ai 匹配所有子域名
+// 动态注册的内容脚本配置（与 manifest 中移除的静态 content_scripts 对应）
+const CONTENT_SCRIPT_ID = 'ai-prompt-assistant';
+const CONTENT_SCRIPT_FILES = [
+  'constants.js',
+  'modules/siteDetector.js',
+  'modules/inputManager.js',
+  'modules/floatingIcon.js',
+  'modules/dataManager.js',
+  'modules/dialogManager.js',
+  'modules/popupManager.js',
+  'modules/promptInserter.js',
+  'modules/styles.js',
+  'content-modules.js'
 ];
+
+/**
+ * 将站点主机名转换为 URL 匹配模式（覆盖裸域与任意子域）
+ * ".doubao.com" -> ["https://doubao.com/*", "https://*.doubao.com/*"]
+ */
+function hostnameToMatchPatterns(hostname) {
+  const base = hostname.startsWith('.') ? hostname.slice(1) : hostname;
+  return [`https://${base}/*`, `https://*.${base}/*`];
+}
+
+async function getEnabledSites() {
+  const result = await chrome.storage.local.get(['aiSites']);
+  const sites = result.aiSites || DEFAULT_AI_SITES;
+  return sites.filter(site => site.enabled);
+}
+
+/**
+ * 按启用的站点同步动态内容脚本注册（只在启用站点注入，而非所有 https 页面）
+ */
+async function syncContentScriptRegistration() {
+  try {
+    const enabled = await getEnabledSites();
+    const matches = [...new Set(enabled.flatMap(site => hostnameToMatchPatterns(site.hostname)))];
+
+    const existing = await chrome.scripting.getRegisteredContentScripts();
+    if (existing.some(script => script.id === CONTENT_SCRIPT_ID)) {
+      await chrome.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+    }
+
+    if (matches.length > 0) {
+      await chrome.scripting.registerContentScripts([{
+        id: CONTENT_SCRIPT_ID,
+        matches,
+        js: CONTENT_SCRIPT_FILES,
+        runAt: 'document_idle',
+        persistAcrossSessions: true
+      }]);
+    }
+  } catch (e) {
+    DebugLog.error('同步内容脚本注册失败:', e);
+  }
+}
+
+/**
+ * 向已打开且匹配启用站点的标签页补注入内容脚本
+ * （注册只对未来页面生效；content-modules.js 有防重复初始化守卫）
+ */
+async function injectIntoExistingTabs() {
+  try {
+    const enabled = await getEnabledSites();
+    if (enabled.length === 0) return;
+
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!tab.url || !tab.url.startsWith('https://')) continue;
+
+      let hostname;
+      try {
+        hostname = new URL(tab.url).hostname;
+      } catch (e) {
+        continue;
+      }
+
+      if (!enabled.some(site => isHostnameMatch(hostname, site.hostname))) continue;
+
+      // 已初始化的标签页跳过：重复执行 constants.js 等文件会因顶层
+      // const/let 重声明抛 SyntaxError（同一隔离环境共享全局词法作用域）
+      try {
+        const probe = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => !!window.__promptAssistantInitialized
+        });
+        if (probe?.[0]?.result) continue;
+      } catch (e) {
+        // 探测失败按未初始化处理，交由下方注入
+      }
+
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: CONTENT_SCRIPT_FILES
+      }).catch(() => {
+        // 受保护页面（chrome:// 等）无法注入，忽略
+      });
+    }
+  } catch (e) {
+    DebugLog.error('向已打开标签页注入失败:', e);
+  }
+}
 
 // 插件安装时的初始化
 chrome.runtime.onInstalled.addListener(async (details) => {
+  DebugLog.log('[扩展安装] 原因:', details.reason);
+
   if (details.reason === 'install') {
-    // 初始化存储
     try {
+      // 检查现有数据
       const existing = await chrome.storage.local.get(['prompts', 'settings', 'aiSites']);
+
+      // 初始化缺失的数据
       if (!existing.prompts) {
-        await chrome.storage.local.set({
-          prompts: DEFAULT_PROMPTS,
-          settings: {
-            showIcon: true,
-            autoDetect: true,
-            theme: 'auto'
-          },
-          aiSites: DEFAULT_AI_SITES
-        });
+        DebugLog.log('[初始化] 设置默认提示词');
+        await chrome.storage.local.set({ prompts: DEFAULT_PROMPTS });
       }
-      // 如果没有aiSites配置，也初始化
+      if (!existing.settings) {
+        DebugLog.log('[初始化] 设置默认设置');
+        await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+      }
       if (!existing.aiSites) {
+        DebugLog.log('[初始化] 设置默认AI网站');
         await chrome.storage.local.set({ aiSites: DEFAULT_AI_SITES });
       }
-      console.log('AI Prompt Assistant 已安装并初始化');
+
+      await migratePromptIds();
+      await syncContentScriptRegistration();
+      DebugLog.log('AI Prompt Assistant 已安装并初始化');
     } catch (error) {
-      console.error('初始化失败:', error);
+      DebugLog.error('初始化失败:', error);
     }
+  } else if (details.reason === 'update') {
+    // 更新后注册信息可能丢失（如浏览器数据迁移），重新同步
+    await syncContentScriptRegistration();
   }
 });
 
+// Service Worker 冷启动时同步注册（注册默认跨会话持久，此处仅作对齐）
+syncContentScriptRegistration();
+
 // 处理来自content script的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('收到消息:', message);
-
-  if (message.type === 'GET_PROMPTS') {
-    // 获取所有提示词
+  if (message.type === MSG.GET_PROMPTS) {
     chrome.storage.local.get(['prompts'], (result) => {
       sendResponse(result.prompts || DEFAULT_PROMPTS);
     });
-    return true; // 保持消息通道开放
+    return true;
   }
 
-  if (message.type === 'SAVE_PROMPT') {
-    // 保存新提示词
+  if (message.type === MSG.SAVE_PROMPT) {
     chrome.storage.local.get(['prompts'], (result) => {
-      const prompts = result.prompts || DEFAULT_PROMPTS;
+      // 不回退到 DEFAULT_PROMPTS，避免已删除的默认提示词被"复活"
+      const prompts = result.prompts || {};
       const { category, prompt } = message.data;
 
       if (!prompts[category]) {
         prompts[category] = [];
       }
 
-      prompts[category].push(prompt);
+      prompts[category].push({ ...prompt, id: prompt.id || generateId() });
 
       chrome.storage.local.set({ prompts }, async () => {
         sendResponse({ success: true });
-
-        // 通知所有标签页数据已更新
-        const tabs = await chrome.tabs.query({});
-        for (const tab of tabs) {
-          if (tab.url && tab.url.startsWith('https://')) {
-            try {
-              await chrome.tabs.sendMessage(tab.id, { type: 'PROMPTS_DATA_UPDATED' });
-            } catch (e) {
-              // 标签页可能还没有加载content script，忽略错误
-            }
-          }
-        }
+        await broadcastToTabs(MSG.PROMPTS_DATA_UPDATED);
       });
     });
     return true;
   }
 
-  if (message.type === 'DELETE_PROMPT') {
-    // 删除提示词
+  if (message.type === MSG.DELETE_PROMPT) {
     chrome.storage.local.get(['prompts'], (result) => {
-      const prompts = result.prompts || DEFAULT_PROMPTS;
+      const prompts = result.prompts || {};
       const { category, index } = message.data;
 
       if (prompts[category] && prompts[category][index]) {
         prompts[category].splice(index, 1);
 
-        // 如果分类为空，删除分类
         if (prompts[category].length === 0) {
           delete prompts[category];
         }
 
         chrome.storage.local.set({ prompts }, async () => {
           sendResponse({ success: true });
-
-          // 通知所有标签页数据已更新
-          const tabs = await chrome.tabs.query({});
-          for (const tab of tabs) {
-            if (tab.url && tab.url.startsWith('https://')) {
-              try {
-                await chrome.tabs.sendMessage(tab.id, { type: 'PROMPTS_DATA_UPDATED' });
-              } catch (e) {
-                // 标签页可能还没有加载content script，忽略错误
-              }
-            }
-          }
+          await broadcastToTabs(MSG.PROMPTS_DATA_UPDATED);
         });
+      } else {
+        // 无论成败都回响应，避免调用方消息端口挂起
+        sendResponse({ success: false });
       }
     });
     return true;
   }
 
-  if (message.type === 'GET_SETTINGS') {
-    // 获取设置
+  if (message.type === MSG.MOVE_PROMPT) {
+    chrome.storage.local.get(['prompts'], (result) => {
+      const prompts = result.prompts || {};
+      const { fromCategory, fromIndex, toCategory, prompt } = message.data;
+
+      if (prompts[fromCategory] && prompts[fromCategory][fromIndex]) {
+        prompts[fromCategory].splice(fromIndex, 1);
+
+        if (prompts[fromCategory].length === 0) {
+          delete prompts[fromCategory];
+        }
+
+        if (!prompts[toCategory]) {
+          prompts[toCategory] = [];
+        }
+
+        // 保留原 id（星标按 id 引用），没有才生成新 id
+        prompts[toCategory].push({ ...prompt, id: prompt.id || generateId() });
+
+        chrome.storage.local.set({ prompts }, async () => {
+          sendResponse({ success: true });
+          await broadcastToTabs(MSG.PROMPTS_DATA_UPDATED);
+        });
+      } else {
+        sendResponse({ success: false });
+      }
+    });
+    return true;
+  }
+
+  if (message.type === MSG.GET_SETTINGS) {
     chrome.storage.local.get(['settings'], (result) => {
-      sendResponse(result.settings || {});
+      sendResponse(result.settings || DEFAULT_SETTINGS);
     });
     return true;
   }
 
-  if (message.type === 'UPDATE_SETTINGS') {
-    // 更新设置
-    chrome.storage.local.set({ settings: message.data }, () => {
+  if (message.type === MSG.UPDATE_SETTINGS) {
+    chrome.storage.local.set({ settings: message.data }, async () => {
       sendResponse({ success: true });
+      await broadcastToTabs(MSG.SETTINGS_UPDATED);
     });
     return true;
   }
 
-  if (message.type === 'GET_AI_SITES') {
-    // 获取AI网站配置
+  if (message.type === MSG.GET_AI_SITES) {
     chrome.storage.local.get(['aiSites'], (result) => {
       sendResponse(result.aiSites || DEFAULT_AI_SITES);
     });
     return true;
   }
 
-  if (message.type === 'UPDATE_AI_SITES') {
-    // 更新AI网站配置
+  if (message.type === MSG.UPDATE_AI_SITES) {
     chrome.storage.local.set({ aiSites: message.data }, async () => {
       sendResponse({ success: true });
-
-      // 通知所有AI网站标签页重新初始化
-      const tabs = await chrome.tabs.query({});
-      for (const tab of tabs) {
-        if (tab.url && tab.url.startsWith('https://')) {
-          try {
-            await chrome.tabs.sendMessage(tab.id, {
-              type: 'SITES_CONFIG_UPDATED',
-              sites: message.data
-            });
-          } catch (e) {
-            // 标签页可能还没有加载content script，忽略错误
-          }
-        }
-      }
+      // 站点变化先同步注册（影响后续页面加载），再补注入已打开的标签页
+      await syncContentScriptRegistration();
+      await injectIntoExistingTabs();
+      await broadcastToTabs(MSG.SITES_CONFIG_UPDATED, { sites: message.data });
     });
     return true;
   }
 
-  if (message.type === 'GET_ENABLED_SITES') {
-    // 获取启用的网站列表（用于content script）
+  if (message.type === MSG.GET_ENABLED_SITES) {
     chrome.storage.local.get(['aiSites'], (result) => {
       const sites = result.aiSites || DEFAULT_AI_SITES;
       const enabledSites = sites.filter(site => site.enabled).map(site => site.hostname);
@@ -205,55 +270,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'GET_STARRED_PROMPTS') {
-    // 获取星标提示词
+  if (message.type === MSG.GET_STARRED_PROMPTS) {
     chrome.storage.local.get(['starredPrompts'], (result) => {
       sendResponse(result.starredPrompts || []);
     });
     return true;
   }
 
-  if (message.type === 'SAVE_STARRED_PROMPTS') {
-    // 保存星标提示词
+  if (message.type === MSG.SAVE_STARRED_PROMPTS) {
     chrome.storage.local.set({ starredPrompts: message.starredPrompts }, async () => {
       sendResponse({ success: true });
-
-      // 通知所有标签页星标数据已更新
-      const tabs = await chrome.tabs.query({});
-      for (const tab of tabs) {
-        if (tab.url && tab.url.startsWith('https://')) {
-          try {
-            await chrome.tabs.sendMessage(tab.id, { type: 'STARRED_DATA_UPDATED' });
-          } catch (e) {
-            // 标签页可能还没有加载content script，忽略错误
-          }
-        }
-      }
+      await broadcastToTabs(MSG.STARRED_DATA_UPDATED);
     });
     return true;
   }
 });
 
-// 监听标签页更新，检测AI网站
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    // 从存储中获取启用的网站配置
-    chrome.storage.local.get(['aiSites'], (result) => {
-      const sites = result.aiSites || DEFAULT_AI_SITES;
-      const enabledSites = sites.filter(site => site.enabled).map(site => site.hostname);
+/**
+ * 为历史数据补充提示词 id（星标按 id 引用）
+ */
+async function migratePromptIds() {
+  try {
+    const result = await chrome.storage.local.get(['prompts', 'starredPrompts']);
+    let needsUpdate = false;
 
-      const isAiSite = enabledSites.some(site => tab.url.includes(site));
-
-      if (isAiSite) {
-        // 向content script发送激活信号
-        chrome.tabs.sendMessage(tabId, {
-          type: 'AI_SITE_DETECTED',
-          url: tab.url
-        }).catch(() => {
-          // Content script可能还未注入
-          console.log('等待content script加载...');
-        });
+    const prompts = result.prompts || {};
+    for (const category of Object.keys(prompts)) {
+      for (let i = 0; i < prompts[category].length; i++) {
+        if (!prompts[category][i].id) {
+          prompts[category][i].id = generateId();
+          needsUpdate = true;
+        }
       }
-    });
+    }
+
+    if (needsUpdate) {
+      await chrome.storage.local.set({ prompts });
+    }
+
+    const starred = result.starredPrompts || [];
+    const needsStarMigration = starred.length > 0 && starred.some(s => !s.id && s.index !== undefined);
+
+    if (needsStarMigration) {
+      const migrated = starred.map(s => {
+        if (s.id) return s;
+        const prompt = prompts[s.category]?.[s.index];
+        if (prompt) {
+          return { id: prompt.id, category: s.category, title: s.title || prompt.title };
+        }
+        return null;
+      }).filter(Boolean);
+
+      await chrome.storage.local.set({ starredPrompts: migrated });
+    }
+  } catch (e) {
+    DebugLog.error('数据迁移失败:', e);
   }
+}
+
+chrome.runtime.onStartup.addListener(() => {
+  syncContentScriptRegistration();
+  migratePromptIds();
 });

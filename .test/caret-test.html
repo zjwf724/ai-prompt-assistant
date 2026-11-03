@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>caret-follow-test</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 40px; }
+  #ta1, #ta2 {
+    font-size: 16px; line-height: 28px;
+    padding: 6px 10px; border: 2px solid #999; box-sizing: border-box;
+    width: 320px; display: block;
+  }
+  #ta2 { height: 100px; overflow-y: auto; }
+  #ce {
+    font-size: 16px; line-height: 28px;
+    padding: 6px 10px; border: 2px solid #999; box-sizing: border-box;
+    width: 320px; min-height: 40px;
+  }
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <textarea id="ta1" spellcheck="false"></textarea>
+  <textarea id="ta2" spellcheck="false"></textarea>
+  <div id="ce" contenteditable="true" spellcheck="false"></div>
+  <div id="results">running...</div>
+
+  <script src="../constants.js"></script>
+  <script src="../modules/floatingIcon.js"></script>
+  <script>
+    (function () {
+      const out = [];
+      let pass = 0, fail = 0;
+      const TOL = 4; // px 容差
+
+      function assert(name, actual, expected) {
+        const ok = Math.abs(actual - expected) <= TOL;
+        ok ? pass++ : fail++;
+        out.push((ok ? 'PASS' : 'FAIL') + ' | ' + name +
+          ' | actual=' + actual.toFixed(1) + ' expected=' + expected.toFixed(1));
+      }
+
+      const icon = new FloatingIcon({ currentFocusedInput: null });
+      icon.create();
+      const ball = icon.floatingIcon;
+
+      function iconTopFor(el) {
+        icon.position(el);
+        return parseFloat(ball.style.top) + 18; // 球心 Y（position 以 top=球心-18 计算）
+      }
+
+      // ---------- T1: textarea 显式换行，光标在第 3 行 ----------
+      const ta1 = document.getElementById('ta1');
+      ta1.value = 'line1\nline2\nline3\nline4\nline5';
+      const idxL3 = ta1.value.indexOf('line3');
+      ta1.setSelectionRange(idxL3, idxL3);
+      const ta1Rect = ta1.getBoundingClientRect();
+      const expectedL3 = ta1Rect.top + 6 /*padTop*/ + 2 /*border*/ + 2 * 28 + 14 /*line3 center*/;
+      assert('T1 textarea 光标第3行', iconTopFor(ta1), expectedL3);
+
+      // ---------- T2: 自动换行（无换行符的长文本） ----------
+      ta1.value = 'word '.repeat(40); // 约 200 字符，320px 宽必然折成多行
+      ta1.setSelectionRange(0, 0);
+      const yStart = icon.getCaretCenterY(ta1);
+      ta1.setSelectionRange(ta1.value.length, ta1.value.length);
+      const yEnd = icon.getCaretCenterY(ta1);
+      assert('T2a 自动换行: 光标在首行', yStart, ta1Rect.top + 6 + 2 + 14);
+      out.push((yEnd - yStart >= 2 * 28 - TOL ? 'PASS' : 'FAIL') +
+        ' | T2b 自动换行: 末尾光标比首行低≥2行 | delta=' + (yEnd - yStart).toFixed(1));
+      (yEnd - yStart >= 2 * 28 - TOL) ? pass++ : fail++;
+
+      // ---------- T3: contenteditable 折叠光标在第 3 行 ----------
+      const ce = document.getElementById('ce');
+      ce.innerHTML = 'line1<br>line2<br>line3';
+      ce.focus();
+      const sel = window.getSelection();
+      const lastText = ce.lastChild; // "line3" 文本节点
+      sel.collapse(lastText, lastText.length);
+      const ceRect = ce.getBoundingClientRect();
+      assert('T3 contenteditable 光标第3行', iconTopFor(ce), ceRect.top + 6 + 2 + 2 * 28 + 14);
+
+      // ---------- T4: 空 contenteditable → 兜底为元素垂直居中 ----------
+      ce.innerHTML = '';
+      const ceRectEmpty = ce.getBoundingClientRect(); // 清空后元素变矮，需重新测量
+      ce.focus();
+      sel.collapse(ce, 0);
+      assert('T4 空 contenteditable 兜底居中', iconTopFor(ce), ceRectEmpty.top + ceRectEmpty.height / 2);
+
+      // ---------- T5: textarea 内部滚动补偿 ----------
+      const ta2 = document.getElementById('ta2');
+      ta2.value = Array.from({ length: 8 }, (_, i) => 'row' + (i + 1)).join('\n');
+      const idxR5 = ta2.value.indexOf('row5');
+      ta2.setSelectionRange(idxR5, idxR5);
+      ta2.scrollTop = 56; // 滚动 2 行
+      const ta2Rect = ta2.getBoundingClientRect();
+      // row5 是第 5 行；caretTop = rect.top + padTop + border + 4*lineHeight - scrollTop
+      const expectedR5 = ta2Rect.top + 6 + 2 + 4 * 28 + 14 - 56;
+      assert('T5 textarea 滚动补偿', icon.getCaretCenterY(ta2), expectedR5);
+
+      // ---------- T6: 未聚焦时停靠对齐到首行（模拟页面加载） ----------
+      ta1.blur && ta1.blur();
+      ta1.value = 'line1\nline2\nline3';
+      ta1.setSelectionRange(0, 0); // 未聚焦时光标默认在开头
+      icon.setRestInput(ta1);      // 停靠：应立即对齐首行，无需聚焦
+      const ta1Rect6 = ta1.getBoundingClientRect();
+      assert('T6 未聚焦停靠首行', iconTopFor(ta1), ta1Rect6.top + 6 + 2 + 14);
+
+      out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
+      document.getElementById('results').textContent = out.join('\n');
+      document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+    })();
+  </script>
+</body>
+</html>

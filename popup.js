@@ -1,7 +1,8 @@
 // AI Prompt Assistant Popup 脚本
 // 处理弹出窗口的所有交互逻辑
+// 必须先加载 constants.js
 
-class PopupManager {
+class PopupSettingsManager {
   constructor() {
     this.prompts = {};
     this.settings = {};
@@ -12,19 +13,10 @@ class PopupManager {
 
   // ==================== 辅助方法 ====================
 
-  // 通知所有标签页数据已更新
+  // 通知所有标签页数据已更新（使用共享的 broadcastToTabs 函数）
   async notifyDataUpdate(messageType = 'PROMPTS_DATA_UPDATED') {
     try {
-      const tabs = await chrome.tabs.query({});
-      for (const tab of tabs) {
-        if (tab.url && tab.url.startsWith('https://')) {
-          try {
-            await chrome.tabs.sendMessage(tab.id, { type: messageType });
-          } catch (e) {
-            // 标签页可能还没有加载content script，忽略错误
-          }
-        }
-      }
+      await broadcastToTabs(messageType);
     } catch (error) {
       console.error('通知标签页失败:', error);
     }
@@ -193,7 +185,7 @@ class PopupManager {
       </div>
     `).join('');
 
-    console.log('[渲染网站列表] 当前网站列表:', this.aiSites);
+    DebugLog.log('[渲染网站列表] 当前网站列表:', this.aiSites);
 
     // 绑定事件
     sitesList.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
@@ -225,12 +217,12 @@ class PopupManager {
       <div class="prompt-category-group">
         <div class="prompt-category-header">${this.escapeHtml(category)} (${this.prompts[category].length})</div>
         ${this.prompts[category].map((prompt, index) => `
-          <div class="prompt-item" data-category="${category}" data-index="${index}">
+          <div class="prompt-item" data-category="${this.escapeHtml(category)}" data-index="${index}">
             <div class="prompt-item-main">
               <span class="prompt-title">${this.escapeHtml(prompt.title)}</span>
               <span class="prompt-preview">${this.escapeHtml(prompt.content)}</span>
             </div>
-            <button class="prompt-edit-btn" data-category="${category}" data-index="${index}" title="编辑">
+            <button class="prompt-edit-btn" data-category="${this.escapeHtml(category)}" data-index="${index}" title="编辑">
               <svg viewBox="0 0 20 20" width="14" height="14">
                 <path fill="currentColor" d="M3 4a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm0 4a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm0 4a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm0 4a1 1 0 0 1 1-1h8a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1z"/>
               </svg>
@@ -310,11 +302,17 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'SAVE_PROMPT',
+        type: MSG.SAVE_PROMPT,
         data: { category, prompt }
       });
 
-      await this.loadData();
+      // 直接更新本地数据，不重新加载
+      if (!this.prompts[category]) {
+        this.prompts[category] = [];
+      }
+      this.prompts[category].push(prompt);
+
+      // 只重新渲染必要的部分
       this.renderStats();
       this.renderPromptsList();
       this.hideModal('addPromptModal');
@@ -359,32 +357,38 @@ class PopupManager {
     }
 
     try {
-      // 如果分类变了，需要先删除原来的
+      const original = this.prompts[this.editingPrompt.category]?.[this.editingPrompt.index];
+      const prompt = { id: original?.id, title: newTitle, content: newContent };
+
+      // 如果分类变了，需要先删除原来的再添加新的（保留原 id 以维持星标）
       if (newCategory !== this.editingPrompt.category) {
         await chrome.runtime.sendMessage({
-          type: 'DELETE_PROMPT',
-          data: { category: this.editingPrompt.category, index: this.editingPrompt.index }
+          type: MSG.MOVE_PROMPT,
+          data: {
+            fromCategory: this.editingPrompt.category,
+            fromIndex: this.editingPrompt.index,
+            toCategory: newCategory,
+            prompt
+          }
         });
-      }
 
-      // 保存新的（或更新现有的）
-      const prompt = { title: newTitle, content: newContent };
+        if (!this.prompts[newCategory]) {
+          this.prompts[newCategory] = [];
+        }
+        this.prompts[newCategory].push(prompt);
 
-      // 如果是同一分类，通过background.js更新以确保通知所有标签页
-      if (newCategory === this.editingPrompt.category) {
+        this.prompts[this.editingPrompt.category].splice(this.editingPrompt.index, 1);
+        if (this.prompts[this.editingPrompt.category].length === 0) {
+          delete this.prompts[this.editingPrompt.category];
+        }
+      } else {
+        // 同一分类，直接更新
         this.prompts[newCategory][this.editingPrompt.index] = prompt;
         await chrome.storage.local.set({ prompts: this.prompts });
-        // 通知所有标签页数据已更新
         await this.notifyDataUpdate();
-      } else {
-        // 不同分类，先删除再添加
-        await chrome.runtime.sendMessage({
-          type: 'SAVE_PROMPT',
-          data: { category: newCategory, prompt }
-        });
       }
 
-      await this.loadData();
+      // 只重新渲染必要的部分
       this.renderStats();
       this.renderPromptsList();
       this.hideModal('editPromptModal');
@@ -408,11 +412,17 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'DELETE_PROMPT',
+        type: MSG.DELETE_PROMPT,
         data: { category, index }
       });
 
-      await this.loadData();
+      // 直接更新本地数据
+      this.prompts[category].splice(index, 1);
+      if (this.prompts[category].length === 0) {
+        delete this.prompts[category];
+      }
+
+      // 只重新渲染必要的部分
       this.renderStats();
       this.renderPromptsList();
       this.hideModal('editPromptModal');
@@ -495,11 +505,17 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'SAVE_PROMPT',
+        type: MSG.SAVE_PROMPT,
         data: { category: name, prompt }
       });
 
-      await this.loadData();
+      // 直接更新本地数据
+      if (!this.prompts[name]) {
+        this.prompts[name] = [];
+      }
+      this.prompts[name].push(prompt);
+
+      // 只重新渲染必要的部分
       this.renderStats();
       this.renderPromptsList();
       this.renderCategoryList();
@@ -520,13 +536,14 @@ class PopupManager {
       return;
     }
 
-    // 重命名分类
+    // 重命名分类（本地数据已更新）
     this.prompts[newName] = this.prompts[oldName];
     delete this.prompts[oldName];
 
     await chrome.storage.local.set({ prompts: this.prompts });
     await this.notifyDataUpdate();
-    await this.loadData();
+
+    // 只重新渲染必要的部分
     this.renderStats();
     this.renderPromptsList();
     this.renderCategoryList();
@@ -545,7 +562,7 @@ class PopupManager {
       await chrome.storage.local.set({ prompts: this.prompts });
       await this.notifyDataUpdate();
 
-      await this.loadData();
+      // 只重新渲染必要的部分（本地数据已更新，无需重新加载）
       this.renderStats();
       this.renderPromptsList();
       this.renderCategoryList();
@@ -579,6 +596,13 @@ class PopupManager {
       return;
     }
 
+    // match pattern 不支持端口号，剥离后保存（如 localhost:3000 -> localhost）
+    hostname = hostname.replace(/:\d+$/, '');
+    if (!hostname) {
+      this.showToast('请输入有效域名');
+      return;
+    }
+
     // 智能处理域名格式
     // 如果用户输入的不是以 . 开头的子域名格式，检查是否应该转换为子域名匹配
     if (!hostname.startsWith('.')) {
@@ -597,7 +621,7 @@ class PopupManager {
         if (commonPlatforms.includes(mainDomain) || commonPlatforms.some(p => hostname.endsWith(p))) {
           // 转换为子域名格式
           hostname = '.' + mainDomain;
-          console.log(`[添加网站] 自动转换为子域名格式: ${hostname}`);
+          DebugLog.log(`[添加网站] 自动转换为子域名格式: ${hostname}`);
         }
       }
     }
@@ -609,19 +633,19 @@ class PopupManager {
     }
 
     const newSite = { name, hostname, enabled: true };
-    console.log('[添加网站] 准备保存:', newSite);
+    DebugLog.log('[添加网站] 准备保存:', newSite);
 
+    // 直接更新本地数据
     this.aiSites.push(newSite);
 
     try {
       const response = await chrome.runtime.sendMessage({
-        type: 'UPDATE_AI_SITES',
+        type: MSG.UPDATE_AI_SITES,
         data: this.aiSites
       });
-      console.log('[添加网站] 保存响应:', response);
+      DebugLog.log('[添加网站] 保存响应:', response);
 
-      // 重新加载数据以确保同步
-      await this.loadData();
+      // 本地数据已更新，只重新渲染
       this.renderSitesList();
       this.renderStats();
       this.hideModal('addSiteModal');
@@ -637,12 +661,11 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'UPDATE_AI_SITES',
+        type: MSG.UPDATE_AI_SITES,
         data: this.aiSites
       });
 
-      // 重新加载数据以确保同步
-      await this.loadData();
+      // 本地数据已更新，只重新渲染
       this.renderSitesList();
       this.renderStats();
       this.showToast(`${this.aiSites[index].name} ${enabled ? '已启用' : '已禁用'}`);
@@ -662,12 +685,11 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'UPDATE_AI_SITES',
+        type: MSG.UPDATE_AI_SITES,
         data: this.aiSites
       });
 
-      // 重新加载数据以确保同步
-      await this.loadData();
+      // 本地数据已更新，只重新渲染
       this.renderSitesList();
       this.renderStats();
       this.showToast('网站已删除');
@@ -708,7 +730,7 @@ class PopupManager {
       settings: this.settings,
       aiSites: this.aiSites,
       exportDate: new Date().toISOString(),
-      version: '1.0.0'
+      version: EXT_VERSION
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -730,24 +752,42 @@ class PopupManager {
       try {
         const data = JSON.parse(e.target.result);
 
-        // 合并提示词
+        if (!data || typeof data !== 'object') {
+          throw new Error('无效的数据格式');
+        }
+
         if (data.prompts && typeof data.prompts === 'object') {
           const merged = { ...this.prompts };
           for (const [category, prompts] of Object.entries(data.prompts)) {
+            if (typeof category !== 'string' || !Array.isArray(prompts)) continue;
             if (!merged[category]) {
               merged[category] = [];
             }
-            merged[category] = merged[category].concat(prompts);
+            const validPrompts = prompts.filter(p =>
+              p && typeof p === 'object' &&
+              typeof p.title === 'string' && p.title.trim() &&
+              typeof p.content === 'string' && p.content.trim()
+            ).map(p => ({
+              id: p.id || generateId(),
+              title: p.title.trim(),
+              content: p.content.trim()
+            }));
+            merged[category] = merged[category].concat(validPrompts);
           }
           await chrome.storage.local.set({ prompts: merged });
           this.prompts = merged;
-          // 通知所有标签页数据已更新
           await this.notifyDataUpdate();
         }
 
-        // 更新设置（可选）
         if (data.settings && typeof data.settings === 'object') {
-          const mergedSettings = { ...this.settings, ...data.settings };
+          const allowedKeys = ['showIcon', 'iconPosition', 'autoDetect', 'theme'];
+          const filteredSettings = {};
+          for (const key of allowedKeys) {
+            if (key in data.settings) {
+              filteredSettings[key] = data.settings[key];
+            }
+          }
+          const mergedSettings = { ...this.settings, ...filteredSettings };
           await chrome.storage.local.set({ settings: mergedSettings });
           this.settings = mergedSettings;
         }
@@ -772,7 +812,7 @@ class PopupManager {
 
     try {
       await chrome.runtime.sendMessage({
-        type: 'UPDATE_SETTINGS',
+        type: MSG.UPDATE_SETTINGS,
         data: this.settings
       });
       this.showToast('设置已更新');
@@ -809,11 +849,12 @@ class PopupManager {
     if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    // innerHTML 只转义 < > &，属性插值场景还需转义引号
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 }
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
-  new PopupManager();
+  new PopupSettingsManager();
 });
