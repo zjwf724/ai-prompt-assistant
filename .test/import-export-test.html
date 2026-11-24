@@ -143,6 +143,23 @@
       try { await dm.importData(null); } catch (e) { threw = true; }
       assert('T7b null 输入抛错', threw);
 
+      // ---------- T8: 与 Object.prototype 成员同名的分类不应让整个导入失败 ----------
+      // （这类键只能来自手工构造的备份文件；用 JSON.parse 保证 "__proto__" 是自有属性）
+      let weirdAdded = -1, weirdError = '';
+      try {
+        const r = await dm.importData(JSON.parse(
+          '{"prompts":{' +
+            '"constructor":[{"id":"p_w1","title":"t","content":"c"}],' +
+            '"__proto__":[{"id":"p_w2","title":"t","content":"c"}],' +
+            '"特殊分类测试":[{"id":"p_w3","title":"t","content":"c"}]' +
+          '}}'));
+        weirdAdded = r.addedPrompts;
+      } catch (e) { weirdError = e.message; }
+      assert('T8a 特殊分类名不再导致整个导入失败，其余分类正常导入',
+        weirdError === '' && weirdAdded === 1, 'error="' + weirdError + '" added=' + weirdAdded);
+      assert('T8b 特殊分类名的条目未被写入',
+        !JSON.stringify(store.prompts).includes('p_w1') && !JSON.stringify(store.prompts).includes('p_w2'));
+
       out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
       document.getElementById('results').textContent = out.join('\n');
       document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';

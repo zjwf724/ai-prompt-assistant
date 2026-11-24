@@ -604,28 +604,12 @@ class PopupSettingsManager {
       return;
     }
 
-    // 智能处理域名格式
-    // 如果用户输入的不是以 . 开头的子域名格式，检查是否应该转换为子域名匹配
-    if (!hostname.startsWith('.')) {
-      // 对于常见AI平台，自动转换为 .domain.com 格式以支持所有子域名
-      const commonPlatforms = [
-        'deepseek.com', 'openai.com', 'anthropic.com', 'claude.ai',
-        'google.com', 'microsoft.com', 'baidu.com', 'alibaba.com',
-        'tencent.com', 'bytedance.com', 'doubao.com', 'z.ai',
-        'perplexity.ai', 'poe.com', 'character.ai', 'gemini.com'
-      ];
-
-      // 提取主域名
-      const parts = hostname.split('.');
-      if (parts.length >= 2) {
-        const mainDomain = parts.slice(-2).join('.');
-        if (commonPlatforms.includes(mainDomain) || commonPlatforms.some(p => hostname.endsWith(p))) {
-          // 转换为子域名格式
-          hostname = '.' + mainDomain;
-          DebugLog.log(`[添加网站] 自动转换为子域名格式: ${hostname}`);
-        }
-      }
+    // 专用 AI 平台域名自动放宽为子域名匹配（如 www.doubao.com -> .doubao.com），其余按原样保存
+    const widened = widenSiteHostname(hostname);
+    if (widened !== hostname) {
+      DebugLog.log(`[添加网站] 自动转换为子域名格式: ${widened}`);
     }
+    hostname = widened;
 
     // 检查是否已存在（转换后再次检查）
     if (this.aiSites.some(site => site.hostname === hostname)) {

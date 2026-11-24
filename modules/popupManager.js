@@ -522,6 +522,10 @@ class PopupManager {
    */
   close() {
     if (this.currentPopup) {
+      // 弹窗关闭前把其中的提示消息挪到 body：提示是加在弹窗内部的，
+      // 随弹窗一起移除的话（如"已插入"/"插入失败"）用户永远看不到
+      this.currentPopupShadowRoot?.querySelectorAll('.prompt-assistant-toast')
+        .forEach(toast => document.body.appendChild(toast));
       this.currentPopup.remove();
       this.currentPopup = null;
       this.currentPopupShadowRoot = null;

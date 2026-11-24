@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>site-hostname-test</title>
+<style>
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="results">running...</div>
+
+<!-- 扩展版：constants.js 中的 widenSiteHostname（popup.js 添加站点时调用）。
+     油猴版有一份逐行相同的拷贝，由 userscript-test.html 经设置面板的真实路径覆盖。 -->
+<script src="../constants.js"></script>
+<script>
+  (function () {
+    const out = [];
+    let pass = 0, fail = 0;
+    function assert(name, cond, detail) {
+      cond ? pass++ : fail++;
+      out.push((cond ? 'PASS' : 'FAIL') + ' | ' + name + (detail ? ' | ' + detail : ''));
+    }
+
+    // [输入, 期望保存的匹配规则]
+    const cases = [
+      // 共享母域名下托管了大量非 AI 服务：不再放宽
+      ['gemini.google.com', 'gemini.google.com'],
+      ['copilot.microsoft.com', 'copilot.microsoft.com'],
+      ['yiyan.baidu.com', 'yiyan.baidu.com'],
+      ['yuanbao.tencent.com', 'yuanbao.tencent.com'],
+      ['tongyi.aliyun.com', 'tongyi.aliyun.com'],
+      ['doubao.bytedance.com', 'doubao.bytedance.com'],
+      // 专用 AI 平台：仍放宽为"该域名及所有子域名"
+      ['www.doubao.com', '.doubao.com'],
+      ['chat.z.ai', '.z.ai'],
+      ['chat.deepseek.com', '.deepseek.com'],
+      ['www.claude.ai', '.claude.ai'],
+      ['www.perplexity.ai', '.perplexity.ai'],
+      // 以 . 开头视为用户明确指定，原样保留
+      ['.doubao.com', '.doubao.com'],
+      ['.google.com', '.google.com'],
+      // 普通域名：按输入的原样
+      ['chatglm.cn', 'chatglm.cn'],
+      ['chatgpt.com', 'chatgpt.com'],
+      // 按域名段对齐：仅"以平台域名结尾"不算同一域名，不得放宽
+      ['xyz.ai', 'xyz.ai'],
+      ['notdeepseek.com', 'notdeepseek.com'],
+      ['mydoubao.com', 'mydoubao.com'],
+      // 边界
+      ['localhost', 'localhost'],
+      ['', '']
+    ];
+
+    cases.forEach(([input, expected]) => {
+      const actual = widenSiteHostname(input);
+      assert(`widenSiteHostname("${input}") → "${expected}"`, actual === expected, 'actual="' + actual + '"');
+    });
+
+    // 最终效果：保存下来的匹配规则，实际会命中哪些网站
+    assert('效果：添加 gemini.google.com 后不覆盖 mail.google.com',
+      !isHostnameMatch('mail.google.com', widenSiteHostname('gemini.google.com')));
+    assert('效果：添加 gemini.google.com 后不覆盖 google.com 首页',
+      !isHostnameMatch('google.com', widenSiteHostname('gemini.google.com')));
+    assert('效果：添加 gemini.google.com 后覆盖其自身及子域名',
+      isHostnameMatch('gemini.google.com', widenSiteHostname('gemini.google.com')) &&
+      isHostnameMatch('a.gemini.google.com', widenSiteHostname('gemini.google.com')));
+    assert('效果：添加 yiyan.baidu.com 后不覆盖 www.baidu.com',
+      !isHostnameMatch('www.baidu.com', widenSiteHostname('yiyan.baidu.com')));
+    assert('效果：添加 www.doubao.com 后覆盖 doubao.com 及所有子域名',
+      isHostnameMatch('doubao.com', widenSiteHostname('www.doubao.com')) &&
+      isHostnameMatch('m.doubao.com', widenSiteHostname('www.doubao.com')));
+
+    // 放宽名单里不应再出现共享母域名
+    assert('名单：不含共享母域名',
+      ['google.com', 'microsoft.com', 'baidu.com', 'alibaba.com', 'tencent.com', 'bytedance.com']
+        .every(d => !AUTO_WIDEN_DOMAINS.includes(d)),
+      'AUTO_WIDEN_DOMAINS=' + JSON.stringify(AUTO_WIDEN_DOMAINS));
+
+    out.unshift('==== ' + pass + ' passed, ' + fail + ' failed ====');
+    document.getElementById('results').textContent = out.join('\n');
+    document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+  })();
+</script>
+</body>
+</html>

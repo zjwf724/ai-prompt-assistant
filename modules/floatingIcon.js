@@ -313,6 +313,12 @@ class FloatingIcon {
    * 并跟随页面滚动保持对齐；开始光标跟随后由跟踪逻辑接管
    */
   setRestInput(inputElement) {
+    // 此前跟踪的输入框已被页面移除：停止跟踪，
+    // 否则下面的停靠定位会被 _trackedInput 守卫挡住，悬浮球停在旧位置
+    if (this._trackedInput && !this._trackedInput.isConnected) {
+      this.stopCaretTracking();
+    }
+
     this._restInput = inputElement;
 
     if (!this._restScrollHandler) {

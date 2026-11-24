@@ -28,7 +28,16 @@
         cond ? pass++ : fail++;
         out.push((cond ? 'PASS' : 'FAIL') + ' | ' + name + (detail ? ' | ' + detail : ''));
       }
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      // 等待后经 MessageChannel 跳出定时器链：页面不可见时（窗口被遮挡/最小化）Chrome 会节流
+      // 链式定时器，若用连续 setTimeout 等待，被测代码自己的定时器会被拖进同一条链，造成时序类假失败
+      const sleep = async ms => {
+        await new Promise(resolve => setTimeout(resolve, ms));
+        await new Promise(resolve => {
+          const ch = new MessageChannel();
+          ch.port1.onmessage = resolve;
+          ch.port2.postMessage(0);
+        });
+      };
 
       async function run() {
         // ---------- T1: 普通 textarea 插入 ----------

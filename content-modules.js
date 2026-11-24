@@ -121,6 +121,12 @@ class PromptAssistant {
 
       let inputElement = this.inputManager.currentFocusedInput;
 
+      // 输入框可能刚被 SPA 重渲染移除（节流的重新扫描尚未执行到）：
+      // 失效引用不能再作为目标，否则选中提示词后会走到插入失败分支
+      if (inputElement && !inputElement.isConnected) {
+        inputElement = null;
+      }
+
       if (!inputElement) {
         inputElement = this.inputManager.getFirstAvailableInput();
       }

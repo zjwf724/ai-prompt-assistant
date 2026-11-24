@@ -61,7 +61,16 @@
       const out = [];
       let pass = 0, fail = 0;
       const TOL = 6;
-      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      // 每次等待后经 MessageChannel 跳出定时器链：页面不可见时（窗口被遮挡/最小化）Chrome 会节流
+      // 链式定时器，若用连续 setTimeout 等待，被测脚本自己的定时器会被拖进同一条链，造成时序类假失败
+      const sleep = async (ms) => {
+        await new Promise(resolve => setTimeout(resolve, ms));
+        await new Promise(resolve => {
+          const ch = new MessageChannel();
+          ch.port1.onmessage = resolve;
+          ch.port2.postMessage(0);
+        });
+      };
 
       function assert(name, ok, detail) {
         ok ? pass++ : fail++;
@@ -164,6 +173,30 @@
           assert('T7 站点行定位（前置）', false, '未找到 127.0.0.1 站点行');
         }
 
+        // ---------- T7f: 添加站点时的域名自动放宽（经设置面板的真实路径） ----------
+        {
+          window.alert = () => {}; // saveSite 用 alert 提示，测试中静默
+          const addSite = async (host) => {
+            const ov = document.querySelector('.apa-settings-overlay');
+            if (!ov) return null;
+            ov.querySelector('#apa-site-name').value = '测试' + host;
+            ov.querySelector('#apa-site-host').value = host;
+            ov.querySelector('#apa-add-site-btn').click();
+            await sleep(120);
+            const hit = (GM_getValue('aiSites', []) || []).find(s => s.name === '测试' + host);
+            return hit ? hit.hostname : null;
+          };
+          // 共享母域名下托管了大量非 AI 服务：按输入的原样保存
+          assert('T7f 添加 gemini.google.com 不再被放宽成 .google.com',
+            (await addSite('gemini.google.com')) === 'gemini.google.com');
+          assert('T7g 添加 copilot.microsoft.com 不再被放宽成 .microsoft.com',
+            (await addSite('copilot.microsoft.com')) === 'copilot.microsoft.com');
+          // 按域名段对齐：仅"以平台域名结尾"不得放宽
+          assert('T7h 添加 xyz.ai 不再因"以 z.ai 结尾"被放宽', (await addSite('xyz.ai')) === 'xyz.ai');
+          // 专用 AI 平台：仍自动放宽为子域名匹配
+          assert('T7i 添加 chat.z.ai 仍自动放宽为 .z.ai', (await addSite('chat.z.ai')) === '.z.ai');
+        }
+
         // ---------- T8: 导入备份（提示词去重 + 星标 + 站点 + 设置，幂等） ----------
         window.alert = () => {}; // importData 用 alert 提示，测试中静默
         const overlayForImport = document.querySelector('.apa-settings-overlay');
@@ -211,6 +244,34 @@
           assert('T8 导入入口（前置）', false, '未找到导入文件输入框');
         }
 
+        // ---------- T8f: 与 Object.prototype 成员同名的分类不应让整个导入失败 ----------
+        // （这类键只能来自手工构造的备份文件；用 JSON 字符串保证 "__proto__" 是自有属性）
+        {
+          const alerts = [];
+          window.alert = (m) => alerts.push(String(m));
+          const ov = document.querySelector('.apa-settings-overlay');
+          const fi = ov && ov.querySelector('#apa-import-file');
+          if (fi) {
+            const dt = new DataTransfer();
+            dt.items.add(new File([
+              '{"prompts":{' +
+                '"constructor":[{"id":"p_w1","title":"t","content":"c"}],' +
+                '"__proto__":[{"id":"p_w2","title":"t","content":"c"}],' +
+                '"特殊分类测试":[{"id":"p_w3","title":"t","content":"c"}]' +
+              '}}'
+            ], 'weird.json', { type: 'application/json' }));
+            fi.files = dt.files;
+            fi.dispatchEvent(new Event('change', { bubbles: true }));
+            await sleep(400);
+            const dump = JSON.stringify(GM_getValue('prompts', {}));
+            assert('T8f 特殊分类名不再导致整个导入失败，其余分类正常导入',
+              alerts.some(a => a.includes('导入成功：新增 1 条')) && !dump.includes('p_w1') && !dump.includes('p_w2'),
+              'alerts=' + JSON.stringify(alerts));
+          } else {
+            assert('T8f 导入入口（前置）', false, '未找到导入文件输入框');
+          }
+        }
+
         // ---------- T9: 导出备份格式（含全部分区，与扩展版互通） ----------
         const overlayForExport = document.querySelector('.apa-settings-overlay');
         const exportBtn = overlayForExport && overlayForExport.querySelector('#apa-export-btn');
@@ -228,10 +289,17 @@
           }
           if (capturedBlob) {
             const dump = JSON.parse(await capturedBlob.text());
+            // 版本号与被测脚本头部比对，而非写死常量（否则每次升版本都会误报失败）
+            const headerVersion = await (async () => {
+              try {
+                const src = await (await fetch('../userscript/ai-prompt-assistant.user.js')).text();
+                return (src.match(/@version\s+(\S+)/) || [])[1] || null;
+              } catch (e) { return null; }
+            })();
             assert('T9 导出含全部分区',
               ['prompts', 'starredPrompts', 'settings', 'aiSites', 'exportDate', 'version']
-                .every(k => k in dump) && dump.version === '1.4.0',
-              'version=' + dump.version);
+                .every(k => k in dump) && !!headerVersion && dump.version === headerVersion,
+              'version=' + dump.version + ' header=' + headerVersion);
           } else {
             assert('T9 导出捕获（前置）', false, '未捕获到导出 Blob');
           }

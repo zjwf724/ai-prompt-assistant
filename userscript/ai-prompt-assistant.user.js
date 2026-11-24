@@ -281,6 +281,9 @@
 
       for (const [category, prompts] of Object.entries(incoming.prompts)) {
         if (typeof category !== 'string' || !category.trim() || !Array.isArray(prompts)) continue;
+        // 与 Object.prototype 成员同名的分类（constructor / __proto__ 等）会让下面的合并
+        // 取到原型成员而非数组，导致整个导入报错；这类数据只能来自手工构造的文件，跳过
+        if (category in Object.prototype) continue;
         const target = merged[category] || (merged[category] = []);
 
         for (const p of prompts) {
@@ -353,6 +356,36 @@
     }
 
     return result;
+  }
+
+  // ==================== 站点域名处理 ====================
+
+  /**
+   * 添加站点时自动放宽为"子域名匹配"的平台域名。
+   * 只收录专用 AI 平台域名。google.com / microsoft.com / baidu.com 这类
+   * 托管了大量非 AI 服务的共享母域名不能放宽，否则悬浮球会出现在
+   * 邮箱、网盘、搜索等页面的每个输入框旁。
+   */
+  const AUTO_WIDEN_DOMAINS = [
+    'deepseek.com', 'openai.com', 'anthropic.com', 'claude.ai',
+    'doubao.com', 'z.ai',
+    'perplexity.ai', 'poe.com', 'character.ai', 'gemini.com'
+  ];
+
+  /**
+   * 规范化用户输入的站点域名
+   * 输入若位于专用 AI 平台域名之下，放宽为 ".域名"（匹配该域名及所有子域名，
+   * 如 www.doubao.com -> .doubao.com）；其余原样返回（按原样匹配，含其子域名）。
+   * 以 . 开头的输入视为用户明确指定，原样返回。
+   * @param {string} hostname - 已去掉协议、路径与端口的域名
+   * @returns {string}
+   */
+  function widenSiteHostname(hostname) {
+    if (typeof hostname !== 'string' || hostname.startsWith('.')) return hostname;
+    const parts = hostname.split('.');
+    if (parts.length < 2) return hostname;
+    const parent = parts.slice(-2).join('.');
+    return AUTO_WIDEN_DOMAINS.includes(parent) ? '.' + parent : hostname;
   }
 
   // ==================== 辅助函数 ====================
@@ -456,6 +489,11 @@
         }
       });
 
+      // 聚焦记录若指向已被页面移除的输入框（SPA 重渲染），不能继续当作当前输入框
+      if (this.currentFocusedInput && !this.currentFocusedInput.isConnected) {
+        this.currentFocusedInput = null;
+      }
+
       // 为所有输入框添加焦点监听
       allInputsArray.forEach(element => {
         if (!element._focusHandler) {
@@ -505,8 +543,10 @@
      * 获取第一个可用的输入框
      */
     getFirstAvailableInput() {
-      if (this.inputElements.length > 0) {
-        return this.inputElements[0];
+      // 列表里可能还留着刚被页面移除的元素（重新扫描有节流），只认仍在文档中的
+      const known = this.inputElements.find(element => element.isConnected);
+      if (known) {
+        return known;
       }
 
       // 实时查找
@@ -860,6 +900,12 @@
      * 并跟随页面滚动保持对齐；开始光标跟随后由跟踪逻辑接管
      */
     setRestInput(inputElement) {
+      // 此前跟踪的输入框已被页面移除：停止跟踪，
+      // 否则下面的停靠定位会被 _trackedInput 守卫挡住，悬浮球停在旧位置
+      if (this._trackedInput && !this._trackedInput.isConnected) {
+        this.stopCaretTracking();
+      }
+
       this._restInput = inputElement;
 
       if (!this._restScrollHandler) {
@@ -1840,6 +1886,10 @@
      */
     close() {
       if (this.currentPopup) {
+        // 弹窗关闭前把其中的提示消息挪到 body：提示是加在弹窗内部的，
+        // 随弹窗一起移除的话（如"已插入"/"插入失败"）用户永远看不到
+        this.currentPopupShadowRoot?.querySelectorAll('.prompt-assistant-toast')
+          .forEach(toast => document.body.appendChild(toast));
         this.currentPopup.remove();
         this.currentPopup = null;
         this.currentPopupShadowRoot = null;
@@ -2049,7 +2099,7 @@
               <input type="text" id="apa-site-host" class="apa-input" placeholder="域名，如：chatglm.cn">
               <button id="apa-add-site-btn" class="apa-btn apa-btn-primary">添加</button>
             </div>
-            <p class="apa-hint">只需域名，无需 http://；以 . 开头（如 .doubao.com）匹配所有子域名。常见 AI 平台会自动转换。</p>
+            <p class="apa-hint">只需域名，无需 http://；以 . 开头（如 .doubao.com）匹配所有子域名。豆包、DeepSeek 等专用 AI 平台会自动放宽为子域名匹配，其余按输入的原样匹配。</p>
           </div>
 
           <div class="apa-section">
@@ -2192,23 +2242,12 @@
         return;
       }
 
-      // 对于常见AI平台，自动转换为 .domain.com 格式以支持所有子域名
-      if (!hostname.startsWith('.')) {
-        const commonPlatforms = [
-          'deepseek.com', 'openai.com', 'anthropic.com', 'claude.ai',
-          'google.com', 'microsoft.com', 'baidu.com', 'alibaba.com',
-          'tencent.com', 'bytedance.com', 'doubao.com', 'z.ai',
-          'perplexity.ai', 'poe.com', 'character.ai', 'gemini.com'
-        ];
-        const parts = hostname.split('.');
-        if (parts.length >= 2) {
-          const mainDomain = parts.slice(-2).join('.');
-          if (commonPlatforms.includes(mainDomain) || commonPlatforms.some(p => hostname.endsWith(p))) {
-            hostname = '.' + mainDomain;
-            DebugLog.log(`[添加网站] 自动转换为子域名格式: ${hostname}`);
-          }
-        }
+      // 专用 AI 平台域名自动放宽为子域名匹配（如 www.doubao.com -> .doubao.com），其余按原样保存
+      const widened = widenSiteHostname(hostname);
+      if (widened !== hostname) {
+        DebugLog.log(`[添加网站] 自动转换为子域名格式: ${widened}`);
       }
+      hostname = widened;
 
       const sites = Store.get('aiSites', DEFAULT_AI_SITES) || [];
       if (sites.some(site => site.hostname === hostname)) {
@@ -3383,6 +3422,12 @@
         e.stopPropagation();
 
         let inputElement = this.inputManager.currentFocusedInput;
+
+        // 输入框可能刚被 SPA 重渲染移除（节流的重新扫描尚未执行到）：
+        // 失效引用不能再作为目标，否则选中提示词后会走到插入失败分支
+        if (inputElement && !inputElement.isConnected) {
+          inputElement = null;
+        }
 
         if (!inputElement) {
           inputElement = this.inputManager.getFirstAvailableInput();

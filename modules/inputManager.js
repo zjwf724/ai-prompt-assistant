@@ -40,6 +40,11 @@ class InputManager {
       }
     });
 
+    // 聚焦记录若指向已被页面移除的输入框（SPA 重渲染），不能继续当作当前输入框
+    if (this.currentFocusedInput && !this.currentFocusedInput.isConnected) {
+      this.currentFocusedInput = null;
+    }
+
     // 为所有输入框添加焦点监听
     allInputsArray.forEach(element => {
       if (!element._focusHandler) {
@@ -89,8 +94,10 @@ class InputManager {
    * 获取第一个可用的输入框
    */
   getFirstAvailableInput() {
-    if (this.inputElements.length > 0) {
-      return this.inputElements[0];
+    // 列表里可能还留着刚被页面移除的元素（重新扫描有节流），只认仍在文档中的
+    const known = this.inputElements.find(element => element.isConnected);
+    if (known) {
+      return known;
     }
 
     // 实时查找

@@ -253,6 +253,9 @@ function applyImport(current, incoming) {
 
     for (const [category, prompts] of Object.entries(incoming.prompts)) {
       if (typeof category !== 'string' || !category.trim() || !Array.isArray(prompts)) continue;
+      // 与 Object.prototype 成员同名的分类（constructor / __proto__ 等）会让下面的合并
+      // 取到原型成员而非数组，导致整个导入报错；这类数据只能来自手工构造的文件，跳过
+      if (category in Object.prototype) continue;
       const target = merged[category] || (merged[category] = []);
 
       for (const p of prompts) {
@@ -337,6 +340,36 @@ let _idCounter = 0;
  */
 function generateId() {
   return 'p' + Date.now().toString(36) + '_' + (++_idCounter);
+}
+
+// ==================== 站点域名处理 ====================
+
+/**
+ * 添加站点时自动放宽为"子域名匹配"的平台域名。
+ * 只收录专用 AI 平台域名。google.com / microsoft.com / baidu.com 这类
+ * 托管了大量非 AI 服务的共享母域名不能放宽，否则悬浮球会出现在
+ * 邮箱、网盘、搜索等页面的每个输入框旁。
+ */
+const AUTO_WIDEN_DOMAINS = [
+  'deepseek.com', 'openai.com', 'anthropic.com', 'claude.ai',
+  'doubao.com', 'z.ai',
+  'perplexity.ai', 'poe.com', 'character.ai', 'gemini.com'
+];
+
+/**
+ * 规范化用户输入的站点域名
+ * 输入若位于专用 AI 平台域名之下，放宽为 ".域名"（匹配该域名及所有子域名，
+ * 如 www.doubao.com -> .doubao.com）；其余原样返回（按原样匹配，含其子域名）。
+ * 以 . 开头的输入视为用户明确指定，原样返回。
+ * @param {string} hostname - 已去掉协议、路径与端口的域名
+ * @returns {string}
+ */
+function widenSiteHostname(hostname) {
+  if (typeof hostname !== 'string' || hostname.startsWith('.')) return hostname;
+  const parts = hostname.split('.');
+  if (parts.length < 2) return hostname;
+  const parent = parts.slice(-2).join('.');
+  return AUTO_WIDEN_DOMAINS.includes(parent) ? '.' + parent : hostname;
 }
 
 // ==================== 辅助函数 ====================

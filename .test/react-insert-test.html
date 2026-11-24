@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>react-insert-test</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 40px; }
+  #ta, #ta2 {
+    font-size: 16px; line-height: 28px;
+    padding: 6px 10px; border: 2px solid #999; box-sizing: border-box;
+    width: 320px; display: block;
+  }
+  #mirror, #mirror2 { font-size: 12px; color: #666; margin: 4px 0 12px; }
+  #results { white-space: pre-wrap; font: 14px/1.6 monospace; margin-top: 24px; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="results">running...</div>
+
+  <script>
+    // ===== 环境垫片 =====
+    // 默认测试油猴版；?target=extension 时按 background.js 的消息语义模拟 chrome.*，
+    // 原样加载扩展版的 10 个内容脚本文件，使两个版本跑同一套断言。
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const target = params.get('target') || 'userscript';
+      const manual = params.has('manual');
+      window.__apaMenuCommands = [];
+
+      const read = (prefix, k) => {
+        const raw = localStorage.getItem(prefix + k);
+        return raw === null ? undefined : JSON.parse(raw);
+      };
+      const write = (prefix, k, v) => localStorage.setItem(prefix + k, JSON.stringify(v));
+
+      let store;
+      if (target === 'userscript') {
+        window.GM_getValue = (k, d) => { const v = read('apa_', k); return v === undefined ? d : v; };
+        window.GM_setValue = (k, v) => write('apa_', k, v);
+        window.GM_deleteValue = (k) => localStorage.removeItem('apa_' + k);
+        window.GM_addValueChangeListener = () => {};
+        window.GM_registerMenuCommand = (label, fn) => window.__apaMenuCommands.push({ label, fn });
+        store = { get: window.GM_getValue, set: window.GM_setValue };
+      } else {
+        // DEFAULT_* / generateId 来自后加载的 constants.js，调用时才解析
+        function handleMessage(msg) {
+          const get = (k, d) => { const v = read('ext_', k); return v === undefined ? d : v; };
+          const set = (k, v) => write('ext_', k, v);
+          const { type, data = {} } = msg || {};
+          const ok = () => ({ success: true });
+          switch (type) {
+            case 'GET_PROMPTS': return get('prompts', null) || DEFAULT_PROMPTS;
+            case 'GET_SETTINGS': return get('settings', null) || DEFAULT_SETTINGS;
+            case 'GET_STARRED_PROMPTS': return get('starredPrompts', null) || [];
+            case 'GET_AI_SITES': return get('aiSites', null) || DEFAULT_AI_SITES;
+            case 'GET_ENABLED_SITES':
+              return (get('aiSites', DEFAULT_AI_SITES) || []).filter(s => s.enabled).map(s => s.hostname);
+            case 'SAVE_PROMPT': {
+              const prompts = get('prompts', null) || {};
+              (prompts[data.category] = prompts[data.category] || [])
+                .push({ ...data.prompt, id: data.prompt.id || generateId() });
+              set('prompts', prompts); return ok();
+            }
+            case 'DELETE_PROMPT': {
+              const prompts = get('prompts', null) || {};
+              if (!(prompts[data.category] && prompts[data.category][data.index])) return { success: false };
+              prompts[data.category].splice(data.index, 1);
+              if (prompts[data.category].length === 0) delete prompts[data.category];
+              set('prompts', prompts); return ok();
+            }
+            case 'MOVE_PROMPT': {
+              const prompts = get('prompts', null) || {};
+              const { fromCategory, fromIndex, toCategory, prompt } = data;
+              if (!(prompts[fromCategory] && prompts[fromCategory][fromIndex])) return { success: false };
+              prompts[fromCategory].splice(fromIndex, 1);
+              if (prompts[fromCategory].length === 0) delete prompts[fromCategory];
+              (prompts[toCategory] = prompts[toCategory] || [])
+                .push({ ...prompt, id: prompt.id || generateId() });
+              set('prompts', prompts); return ok();
+            }
+            case 'SAVE_STARRED_PROMPTS': set('starredPrompts', msg.starredPrompts); return ok();
+            case 'UPDATE_SETTINGS': set('settings', data); return ok();
+            case 'UPDATE_AI_SITES': set('aiSites', data); return ok();
+            case 'IMPORT_DATA': {
+              if (data.prompts !== undefined) set('prompts', data.prompts);
+              if (data.starredPrompts !== undefined) set('starredPrompts', data.starredPrompts);
+              if (data.settings !== undefined) {
+                set('settings', { ...(get('settings', DEFAULT_SETTINGS) || {}), ...data.settings });
+              }
+              if (data.aiSites !== undefined) set('aiSites', data.aiSites);
+              return ok();
+            }
+          }
+          return undefined;
+        }
+        window.chrome = {
+          runtime: {
+            onMessage: { addListener() {} },
+            sendMessage(msg) { return Promise.resolve(handleMessage(msg)); }
+          }
+        };
+        store = {
+          get: (k, d) => { const v = read('ext_', k); return v === undefined ? d : v; },
+          set: (k, v) => write('ext_', k, v)
+        };
+      }
+
+      // 种子数据（必须先于被测脚本加载）
+      localStorage.clear();
+      store.set('prompts', {
+        "角色扮演": [
+          { id: "p1", title: "专业翻译", content: "请扮演翻译家：" },
+          { id: "p2", title: "代码助手", content: "请分析代码：" }
+        ]
+      });
+      store.set('settings', { showIcon: true, iconPosition: 'right', autoDetect: true, theme: 'auto' });
+      store.set('starredPrompts', []);
+      store.set('aiSites', [
+        { name: "DeepSeek", hostname: "chat.deepseek.com", enabled: true },
+        { name: "豆包", hostname: ".doubao.com", enabled: true },
+        { name: "腾讯元宝", hostname: "yuanbao.tencent.com", enabled: true },
+        { name: "测试站", hostname: "127.0.0.1", enabled: true }
+      ]);
+
+      const files = target === 'userscript'
+        ? ['../userscript/ai-prompt-assistant.user.js']
+        : ['../constants.js', '../modules/siteDetector.js', '../modules/inputManager.js',
+           '../modules/floatingIcon.js', '../modules/dataManager.js', '../modules/dialogManager.js',
+           '../modules/popupManager.js', '../modules/promptInserter.js', '../modules/styles.js',
+           '../content-modules.js'];
+
+      // 顺序加载（扩展版各文件有依赖关系）；带时间戳防止浏览器用缓存里的旧脚本
+      window.__loadTarget = () => files.reduce((p, src) => p.then(() => new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = src + (src.includes('?') ? '&' : '?') + 'v=' + Date.now();
+        s.onload = res;
+        s.onerror = () => rej(new Error('加载失败: ' + src));
+        document.body.appendChild(s);
+      })), Promise.resolve());
+
+      window.__targetName = target;
+      window.__manual = manual;
+    })();
+  </script>
+
+  <!-- 真 React 18（UMD 生产构建） -->
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
+
+  <script>
+    // 受控 textarea：value 由 React 状态驱动；聚焦/失焦都会触发重渲染
+    // （对应真实站点"点击页面空白 → 组件重渲染 → 内容被状态覆盖"的场景）
+    const h = React.createElement;
+    function makeApp(ids) {
+      return function App() {
+        const [v, setV] = React.useState('');
+        const [focused, setFocused] = React.useState(false);
+        const [n, setN] = React.useState(0);
+        window.__reactState = window.__reactState || {};
+        window.__reactState[ids.ta] = { rerender: () => setN(x => x + 1) };
+        return h('div', null,
+          h('textarea', {
+            id: ids.ta,
+            value: v,
+            placeholder: 'React 受控 textarea',
+            onChange: e => setV(e.target.value),
+            onFocus: () => setFocused(true),
+            onBlur: () => setFocused(false)
+          }),
+          h('div', { id: ids.mirror }, 'React状态:[' + v + '] focused=' + focused + ' n=' + n)
+        );
+      };
+    }
+
+    let root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(h(makeApp({ ta: 'ta', mirror: 'mirror' })));
+    window.__remount = function () {
+      // 模拟 SPA 重渲染：卸载旧组件并挂载全新的输入框（下移 300px，便于区分悬浮球停靠位置）
+      root.unmount();
+      document.getElementById('root').innerHTML = '';
+      if (!document.getElementById('spacer')) {
+        const sp = document.createElement('div');
+        sp.id = 'spacer';
+        sp.style.height = '300px';
+        document.body.insertBefore(sp, document.getElementById('root'));
+      }
+      window.__reactState = {};
+      root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(h(makeApp({ ta: 'ta2', mirror: 'mirror2' })));
+    };
+  </script>
+
+  <script>
+    (async function () {
+      const out = [];
+      let pass = 0, fail = 0;
+
+      // 等待方式说明：页面不可见时（窗口被遮挡/最小化），Chrome 会节流"链式定时器"。
+      // 若测试用连续 setTimeout 等待，被测脚本自己的 setTimeout 会被算进同一条链而被拖慢，
+      // 造成"插入延迟/弹窗不关"的假失败。这里每次等待后都经 MessageChannel 跳出定时器链，
+      // 使脚本内部的定时器始终在链之外、按正常速度执行。
+      // （不能用 MessageChannel 紧凑自旋来等待：那会耗尽后台页面的 CPU 配额，反而饿死脚本的定时器。）
+      const tick = () => new Promise(resolve => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = () => resolve();
+        ch.port2.postMessage(0);
+      });
+      const sleep = async (ms) => {
+        await new Promise(resolve => setTimeout(resolve, ms));
+        await tick();
+      };
+      const waitFor = async (predicate, timeout = 6000) => {
+        const end = performance.now() + timeout;
+        while (!predicate()) {
+          if (performance.now() > end) return false;
+          await sleep(30);
+        }
+        return true;
+      };
+
+      const assert = (name, ok, detail) => {
+        ok ? pass++ : fail++;
+        out.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (detail !== undefined ? ' | ' + detail : ''));
+      };
+      const shadow = () => document.querySelector('.prompt-assistant-shadow-host')?.shadowRoot || null;
+      const icon = () => document.getElementById('prompt-assistant-floating-icon');
+      const iconCenter = () => (icon() ? parseFloat(icon().style.top) + 18 : NaN);
+      const firstLineCenter = (el) => el.getBoundingClientRect().top + 6 + 2 + 14;
+      // 已连接到文档、按悬浮提示样式固定在视口上、用户实际能看到的提示消息
+      const visibleToasts = () => [...document.querySelectorAll('.prompt-assistant-toast')]
+        .filter(t => t.isConnected && getComputedStyle(t).display !== 'none' &&
+                     getComputedStyle(t).position === 'fixed')
+        .map(t => t.textContent);
+
+      // 经悬浮球选中第 index 条提示词（等到弹窗打开、选中、弹窗关闭为止）
+      const pick = async (index) => {
+        icon().click();
+        if (!await waitFor(() => !!shadow()?.querySelectorAll('.prompt-item')[index], 4000)) return false;
+        shadow().querySelectorAll('.prompt-item')[index].click();
+        await waitFor(() => !shadow(), 4000);
+        return true;
+      };
+
+      try {
+        await window.__loadTarget();
+        if (window.__manual) { document.title = 'MANUAL'; return; }
+
+        await waitFor(() => !!icon() && !!document.getElementById('ta'), 4000);
+        const ta = document.getElementById('ta');
+        assert('R0 前置：React 已渲染受控 textarea，悬浮球已创建', !!ta && !!icon());
+
+        // ---------- 对照组：证明本环境能复现"内容消失"bug ----------
+        // 直接改 DOM value（不通知 React）→ 重渲染后应被 React 状态覆盖回空
+        ta.value = 'naive直接赋值';
+        window.__reactState.ta.rerender();
+        const reverted = await waitFor(() => ta.value === '', 3000);
+        assert('R1 对照：直接改 DOM value 不通知 React，重渲染后内容丢失（bug 可复现）',
+          reverted, 'value="' + ta.value + '"');
+
+        // ---------- 实验组：走脚本的真实插入路径 ----------
+        assert('R2 悬浮球停靠在 React textarea 首行', Math.abs(iconCenter() - firstLineCenter(ta)) <= 6,
+          'center=' + iconCenter().toFixed(1) + ' expect≈' + firstLineCenter(ta).toFixed(1));
+
+        assert('R3 经悬浮球选中提示词', await pick(0));
+        assert('R4 插入后 DOM value 含提示词', ta.value.includes('请扮演翻译家：'), 'value="' + ta.value + '"');
+        assert('R5 插入内容已进入 React 状态（关键）',
+          document.getElementById('mirror').textContent.includes('请扮演翻译家：'),
+          document.getElementById('mirror').textContent);
+        assert('R6 插入后弹窗自动关闭', !shadow());
+        assert('R7 插入成功提示用户能看到',
+          visibleToasts().some(t => t.includes('已插入')), 'toasts=' + JSON.stringify(visibleToasts()));
+
+        // 模拟"点击页面空白"：失焦触发 React onBlur → 重渲染；再强制重渲染
+        ta.blur();
+        await sleep(200);
+        window.__reactState.ta.rerender();
+        await sleep(200);
+        window.__reactState.ta.rerender();
+        await sleep(200);
+        assert('R8 失焦 + 多次重渲染后内容仍在（原 bug 场景）',
+          ta.value.includes('请扮演翻译家：'), 'value="' + ta.value + '"');
+
+        assert('R9 二次选中提示词', await pick(1));
+        assert('R10 二次插入后两条提示词都在',
+          ta.value.includes('请扮演翻译家：') && ta.value.includes('请分析代码：'), 'value="' + ta.value + '"');
+        assert('R11 二次插入后 React 状态同步',
+          document.getElementById('mirror').textContent.includes('请分析代码：'),
+          document.getElementById('mirror').textContent);
+
+        // ---------- SPA 场景一：输入框被卸载重建，用户直接点悬浮球 ----------
+        // 此前"当前输入框"仍指向已被移除的旧 textarea
+        window.__remount();
+        const docked = await waitFor(() => {
+          const el = document.getElementById('ta2');
+          return !!el && !document.getElementById('ta') &&
+                 Math.abs(iconCenter() - firstLineCenter(el)) <= 6;
+        }, 8000);   // 等 MutationObserver 发现新输入框并重新停靠悬浮球
+        const ta2 = document.getElementById('ta2');
+        assert('R12 前置：旧输入框已移除、新输入框已挂载', !document.getElementById('ta') && !!ta2);
+        assert('R13 悬浮球已重新停靠到新输入框首行', docked,
+          'center=' + iconCenter().toFixed(1) + ' expect≈' + (ta2 ? firstLineCenter(ta2).toFixed(1) : '?'));
+
+        assert('R14 输入框重建后点击悬浮球能打开弹窗并选中条目', await pick(0));
+        assert('R15 输入框重建后（未点击新输入框）直接插入到【新】输入框',
+          ta2.value.includes('请扮演翻译家：'), 'ta2="' + ta2.value + '" toasts=' + JSON.stringify(visibleToasts()));
+        assert('R16 新输入框的 React 状态同步',
+          document.getElementById('mirror2').textContent.includes('请扮演翻译家：'),
+          document.getElementById('mirror2').textContent);
+
+        // ---------- SPA 场景二：弹窗打开期间输入框被移除 → 走失败分支 ----------
+        icon().click();
+        assert('R17 前置：弹窗已打开', await waitFor(() => !!shadow()?.querySelector('.prompt-item'), 4000));
+        window.__remount();                    // 弹窗的目标输入框此刻被卸载
+        await sleep(150);
+        const staleItem = shadow()?.querySelector('.prompt-item');
+        assert('R18 前置：弹窗仍在、可点选条目', !!staleItem);
+        staleItem?.click();
+        await waitFor(() => !shadow(), 4000);
+        assert('R19 目标失效时弹窗关闭且不向新输入框误插',
+          !shadow() && (document.getElementById('ta2')?.value || '') === '',
+          'ta2="' + (document.getElementById('ta2')?.value || '') + '"');
+        assert('R20 插入失败提示用户能看到',
+          visibleToasts().some(t => t.includes('插入失败')), 'toasts=' + JSON.stringify(visibleToasts()));
+
+        // ---------- SPA 场景三：输入框重建后【立即】点悬浮球 ----------
+        // 此时脚本对输入框列表的重新扫描受节流（最长约 1 秒）尚未执行，
+        // 旧的"聚焦记录"与"输入框列表"都还指向已移除的元素
+        window.__remount();
+        const appeared = await waitFor(() => !!document.getElementById('ta2'), 3000);   // 只等新输入框出现，不等重新扫描
+        assert('R21 前置：新输入框已挂载', appeared);
+        assert('R22 输入框重建后立即点击悬浮球也能插入到【新】输入框',
+          await pick(0) && (document.getElementById('ta2')?.value || '').includes('请扮演翻译家：'),
+          'ta2="' + (document.getElementById('ta2')?.value || '') + '" toasts=' + JSON.stringify(visibleToasts()));
+      } catch (e) {
+        fail++;
+        out.push('FAIL | 测试执行异常 | ' + (e && e.stack || e));
+      }
+
+      out.unshift('==== [' + window.__targetName + '] ' + pass + ' passed, ' + fail + ' failed ====' +
+        '（visibilityState=' + document.visibilityState + '）');
+      document.getElementById('results').textContent = out.join('\n');
+      document.title = fail === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+    })();
+  </script>
+</body>
+</html>
