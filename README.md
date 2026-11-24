@@ -1,6 +1,6 @@
 # AI Prompt Assistant
 
-![Version](https://img.shields.io/badge/version-1.4.1-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.4.2-4CAF50) ![Manifest](https://img.shields.io/badge/Chrome%20MV3-supported-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 一个 Chrome 扩展（Manifest V3）：在 AI 聊天网站的输入框旁显示悬浮球，一键插入你预设的常用提示词。支持分类管理、星标收藏、搜索过滤、多站点自定义，数据完全保存在本地。
 
@@ -30,9 +30,9 @@
 
 ### 安装（油猴脚本版，推荐）
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. 点击安装（版本锁定链接，不受 CDN 缓存影响）：[ai-prompt-assistant.user.js v1.4.1](https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js)
+2. 点击安装（版本锁定链接，不受 CDN 缓存影响）：[ai-prompt-assistant.user.js v1.4.2](https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js)
    点击后 Tampermonkey 会自动弹出安装确认页，一键完成；安装后自动更新走 `@main` 分支地址；
-   备用：[fastly 镜像](https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js) · [gcore 镜像](https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js) · [GitHub raw（境外）](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
+   备用：[fastly 镜像](https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js) · [gcore 镜像](https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js) · [GitHub raw（境外）](https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js)
 
 详见 [userscript/README.md](userscript/README.md)。
 
@@ -120,6 +120,15 @@ python -m http.server 8642
 - 某些站点输入框在 iframe 内时无法识别（内容脚本默认只注入顶层框架）
 
 ## 📈 更新日志
+
+### v1.4.2 - 2026-11-24
+- 🐛 修复：输入框被页面重建（新建对话、路由切换等 SPA 重渲染）后，点悬浮球选提示词没有反应——失效的聚焦记录与输入框列表不再作为插入目标
+- 🐛 修复：悬浮球在聚焦过的输入框被移除后不再重新停靠到新输入框
+- 🐛 修复：插入成功/失败提示从未显示——提示随弹窗一起被移除，现在关闭弹窗前会保留提示
+- 🐛 修复：添加站点时域名自动放宽过猛——仅豆包、DeepSeek 等专用 AI 平台放宽为子域名匹配；添加 gemini.google.com、yiyan.baidu.com 等不再覆盖同根域名下的邮箱、搜索等页面
+- 🔧 修复：导入备份时分类名与 Object.prototype 成员同名（constructor / __proto__）导致整个导入失败
+- ✅ 测试：新增真 React 18 受控组件回归测试与域名规则测试，全套共 132 条断言
+（以上修复均为扩展版与油猴版同步修改）
 
 ### v1.4.1 - 2026-11-03
 - 🐛 修复：插入的提示词在点击页面空白后消失——AI 站点输入框为 React/Vue/富文本编辑器受控组件，直接改 DOM 不进框架状态，失焦重渲染即被覆盖。textarea 改用原生原型 value setter + input 事件，contenteditable 改用 execCommand('insertText')（扩展版与油猴版同步修复）

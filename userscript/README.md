@@ -8,11 +8,11 @@ Chrome 扩展 [ai-prompt-assistant](../README.md) 的 Tampermonkey/油猴移植�
 2. 点击安装链接，Tampermonkey 会自动弹出安装确认页，一键完成（无需下载/复制/粘贴）：
 
    **推荐：版本锁定链接（git 标签地址，内容不可变，不受 CDN 缓存影响）**
-   https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
+   https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js
 
    **备用（依次尝试）：**
-   - https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
-   - https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.1/userscript/ai-prompt-assistant.user.js
+   - https://fastly.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js
+   - https://gcore.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@v1.4.2/userscript/ai-prompt-assistant.user.js
    - https://cdn.jsdelivr.net/gh/zjwf724/ai-prompt-assistant@main/userscript/ai-prompt-assistant.user.js （@main 分支，个别节点可能有缓存延迟）
    - https://raw.githubusercontent.com/zjwf724/ai-prompt-assistant/main/userscript/ai-prompt-assistant.user.js （GitHub 官方，境外网络）
 
